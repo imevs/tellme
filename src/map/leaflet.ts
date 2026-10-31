@@ -10,7 +10,7 @@ export function initMap(onViewChange: () => void): void {
   const map = L.map(IDS.MAP, {
     center:           DEFAULT_CENTER,
     zoom:             DEFAULT_ZOOM,
-    zoomControl:      true,
+    zoomControl:      false,
     attributionControl: true,
   });
 
@@ -19,8 +19,6 @@ export function initMap(onViewChange: () => void): void {
     subdomains:  MAP_TILES.SUBDOMAINS,
     maxZoom:     MAP_TILES.MAX_ZOOM,
   }).addTo(map);
-
-  map.zoomControl.setPosition('topright');
 
   // Single shared debounced handler — avoids double-fetch on zoom
   const debouncedLoad = debounce(onViewChange, DEBOUNCE_MAP_MS);

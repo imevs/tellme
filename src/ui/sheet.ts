@@ -32,10 +32,14 @@ export function closeSheet(): void {
 
 // ── Render description ─────────────────────────────────
 
-export function renderDesc(description: string, terms: string[]): void {
+export function renderDesc(description: string, terms: string[], image?: string): void {
   hideEl(IDS.SHEET_LOADING);
 
-  const html = highlightTerms(description, terms);
+  let html = highlightTerms(description, terms);
+  if (image) {
+    html = `<div class="sheet-hero-img-wrap"><img class="sheet-hero-img" src="${esc(image)}" alt="" /></div>${html}`;
+  }
+
   const descEl = $(IDS.SHEET_DESC);
   descEl.innerHTML = html;
   showEl(IDS.SHEET_DESC);

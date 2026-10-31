@@ -11,15 +11,17 @@ import {
   initSwipe, registerExploreCallback,
 } from './ui/sheet';
 import { initMap, setMarkers, highlightMarker, flyTo, locateUser, getMapBBox, getMapZoom, getMapCenter } from './map/leaflet';
-import { fetchPOIs, parsePOIs, poiEmoji, poiCategory, poiAddress } from './api/overpass';
-import { fetchDescription, buildPlacePrompt, buildTermPrompt } from './api/gemini';
+import { poiEmoji, poiCategory, poiAddress } from './api/overpass';
+import { fetchNearbyPlaces } from './api/places';
+import { fetchWikiDescription } from './api/wiki';
+import { DEFAULT_PARIS_POIS } from './api/gemini';
 import {
   IDS, CSS,
   STORAGE_KEY_API,
   MIN_ZOOM_FOR_POIS,
   FLY_TO_ZOOM,
 } from './constants';
-import type { DescRequest } from './types';
+import type { DescRequest, POI } from './types';
 
 // ── Bootstrap ──────────────────────────────────────────
 
@@ -27,6 +29,7 @@ function boot(): void {
   $safe(IDS.API_MODAL)?.setAttribute('hidden', '');
   registerExploreCallback(handleExploreTerm);
   initMap(handleViewChange);
+  void handleViewChange();
   locateUser(true);
   wireListeners();
   initSwipe();
@@ -34,29 +37,72 @@ function boot(): void {
 
 // ── Map view change ────────────────────────────────────
 
+// ── Places In-Memory Cache ─────────────────────────────
+const placesCache = new Map<string, POI[]>();
+
 async function handleViewChange(): Promise<void> {
-  const bbox   = getMapBBox();
   const zoom   = getMapZoom();
   const center = getMapCenter();
 
-  if (!bbox || !center || zoom < MIN_ZOOM_FOR_POIS) {
+  if (!center || zoom < MIN_ZOOM_FOR_POIS) {
     showEmpty('Zoom in more to see places');
+    return;
+  }
+
+  const { activeCat } = store.get();
+  const cacheKey = `${center.lat.toFixed(2)},${center.lng.toFixed(2)},${activeCat}`;
+
+  // Check cache first for instant response
+  if (placesCache.has(cacheKey)) {
+    const cached = placesCache.get(cacheKey)!;
+    store.update({ pois: cached });
+    setMarkers(cached, handleSelectPOI);
+    renderCards(cached, handleSelectPOI);
     return;
   }
 
   showSkeletons();
 
   try {
-    const elements = await fetchPOIs(bbox, store.get().activeCat);
-    const pois     = parsePOIs(elements, center);
+    const pois = await fetchNearbyPlaces(center.lat, center.lng, activeCat);
 
-    store.update({ pois });
-    setMarkers(pois, handleSelectPOI);
-    renderCards(pois, handleSelectPOI);
+    if (pois.length > 0) {
+      placesCache.set(cacheKey, pois);
+      store.update({ pois });
+      setMarkers(pois, handleSelectPOI);
+      renderCards(pois, handleSelectPOI);
+      return;
+    }
+
+    // If Wikipedia returned 0 spots (e.g. over ocean or unmapped area) and near Paris, show Paris highlights
+    const isNearParis = Math.abs(center.lat - 48.8566) < 0.35 && Math.abs(center.lng - 2.3522) < 0.35;
+    if (isNearParis) {
+      const fallback = activeCat === 'all'
+        ? DEFAULT_PARIS_POIS
+        : DEFAULT_PARIS_POIS.filter(p => !activeCat || activeCat === 'all' || !!p.tags[activeCat as keyof typeof p.tags]);
+      store.update({ pois: fallback });
+      setMarkers(fallback, handleSelectPOI);
+      renderCards(fallback, handleSelectPOI);
+      return;
+    }
+
+    showEmpty('Move map to a town, city, or landmark to explore');
   } catch (err: unknown) {
     if ((err as Error).name === 'AbortError') return; // cancelled — ignore
     console.error(err);
-    showEmpty((err as Error).message ?? 'Could not load places — try moving the map');
+
+    const isNearParis = Math.abs(center.lat - 48.8566) < 0.35 && Math.abs(center.lng - 2.3522) < 0.35;
+    if (isNearParis || store.get().pois.length === 0) {
+      const fallback = activeCat === 'all'
+        ? DEFAULT_PARIS_POIS
+        : DEFAULT_PARIS_POIS.filter(p => !activeCat || activeCat === 'all' || !!p.tags[activeCat as keyof typeof p.tags]);
+      store.update({ pois: fallback });
+      setMarkers(fallback, handleSelectPOI);
+      renderCards(fallback, handleSelectPOI);
+      return;
+    }
+
+    showEmpty('Could not load places — try moving the map');
   }
 }
 
@@ -87,28 +133,28 @@ async function handleExploreTerm(term: string): Promise<void> {
   await handleFetchDesc({ type: 'term', term });
 }
 
-// ── Gemini description fetch ───────────────────────────
+// ── Place & Term description fetch (Wikipedia) ─────────
 
 async function handleFetchDesc(req: DescRequest): Promise<void> {
-  const { apiKey } = store.get();
-
-  if (!apiKey) {
-    store.update({ pendingFetch: req });
-    $safe(IDS.API_MODAL)?.removeAttribute('hidden');
-    return;
-  }
+  const query = req.type === 'place' ? req.name : req.term;
 
   try {
-    const prompt = req.type === 'place'
-      ? buildPlacePrompt(req)
-      : buildTermPrompt(req);
-
-    const result = await fetchDescription(apiKey, prompt);
-    renderDesc(result.description, result.terms);
+    const result = await fetchWikiDescription(query);
+    renderDesc(result.description, result.terms, result.thumbnail);
   } catch (err: unknown) {
     if ((err as Error).name === 'AbortError') return;
     console.error(err);
-    renderError((err as Error).message ?? 'Unexpected error');
+
+    // Fallback if specific search failed: use active place tags description
+    if (req.type === 'place') {
+      const activePoi = store.get().pois[store.get().activeIdx];
+      if (activePoi?.tags.description) {
+        renderDesc(activePoi.tags.description, [activePoi.tags.name ?? 'Explore']);
+        return;
+      }
+    }
+
+    renderError((err as Error).message ?? 'Could not find details on Wikipedia');
   }
 }
 
@@ -129,7 +175,49 @@ function saveKey(): void {
   if (pendingFetch) {
     store.update({ pendingFetch: null });
     void handleFetchDesc(pendingFetch);
+  } else {
+    void handleViewChange();
   }
+}
+
+// ── Fullscreen toggle ──────────────────────────────────
+
+function toggleFullscreen(): void {
+  const doc = document as Document & {
+    webkitFullscreenElement?: Element;
+    webkitExitFullscreen?: () => Promise<void>;
+  };
+  const docEl = document.documentElement as HTMLElement & {
+    webkitRequestFullscreen?: () => Promise<void>;
+  };
+
+  const isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+
+  if (!isFullscreen) {
+    if (docEl.requestFullscreen) {
+      docEl.requestFullscreen().catch(() => showToast('Fullscreen not supported'));
+    } else if (docEl.webkitRequestFullscreen) {
+      docEl.webkitRequestFullscreen();
+    } else {
+      showToast('Fullscreen not supported on this device');
+    }
+  } else {
+    if (doc.exitFullscreen) {
+      void doc.exitFullscreen().catch(() => {});
+    } else if (doc.webkitExitFullscreen) {
+      doc.webkitExitFullscreen();
+    }
+  }
+}
+
+function updateFullscreenIcon(): void {
+  const btn = $safe(IDS.FULLSCREEN_BTN);
+  if (!btn) return;
+  const doc = document as Document & { webkitFullscreenElement?: Element };
+  const isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+  btn.textContent = isFullscreen ? '🗗' : '⛶';
+  btn.setAttribute('aria-pressed', String(isFullscreen));
+  btn.title = isFullscreen ? 'Exit fullscreen' : 'Fullscreen';
 }
 
 // ── Event wiring ───────────────────────────────────────
@@ -151,8 +239,19 @@ function wireListeners(): void {
     }
   });
 
-  // Top bar
+  // Top bar & Zoom
   $safe(IDS.LOCATE_BTN)?.addEventListener('click', () => locateUser(false));
+  $safe(IDS.FULLSCREEN_BTN)?.addEventListener('click', toggleFullscreen);
+  document.addEventListener('fullscreenchange', updateFullscreenIcon);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+
+  $safe(IDS.ZOOM_IN_BTN)?.addEventListener('click', () => {
+    store.get().map?.zoomIn();
+  });
+  $safe(IDS.ZOOM_OUT_BTN)?.addEventListener('click', () => {
+    store.get().map?.zoomOut();
+  });
+
   $safe(IDS.SETTINGS_BTN)?.addEventListener('click', () => {
     const input = $safe<HTMLInputElement>(IDS.API_KEY_INPUT);
     if (input) input.value = store.get().apiKey;

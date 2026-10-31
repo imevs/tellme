@@ -13,6 +13,7 @@ export interface OverpassTags {
   'addr:street'?:     string;
   'addr:housenumber'?:string;
   'addr:city'?:       string;
+  [key: string]:      string | undefined;
 }
 
 export interface OverpassElement {

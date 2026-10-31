@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseGeminiResponse, buildPlacePrompt, buildTermPrompt } from '../../src/api/gemini';
+import {
+  parseGeminiResponse,
+  buildPlacePrompt,
+  buildTermPrompt,
+  buildDiscoverPlacesPrompt,
+  parseDiscoveredPlaces,
+} from '../../src/api/gemini';
 import type { PlaceDescRequest, TermDescRequest } from '../../src/types';
 
 // ── parseGeminiResponse() ──────────────────────────────
@@ -104,5 +110,67 @@ describe('buildTermPrompt()', () => {
 
   it('instructs VERBATIM matching', () => {
     expect(buildTermPrompt(req)).toContain('VERBATIM');
+  });
+});
+
+// ── buildDiscoverPlacesPrompt() ────────────────────────
+describe('buildDiscoverPlacesPrompt()', () => {
+  it('formats coordinates and includes category', () => {
+    const prompt = buildDiscoverPlacesPrompt(48.8566, 2.3522, 'tourism');
+    expect(prompt).toContain('48.8566');
+    expect(prompt).toContain('2.3522');
+    expect(prompt).toContain('tourism');
+  });
+
+  it('handles "all" category diversity clause', () => {
+    const prompt = buildDiscoverPlacesPrompt(40.7128, -74.006, 'all');
+    expect(prompt).toContain('diverse mix');
+  });
+});
+
+// ── parseDiscoveredPlaces() ────────────────────────────
+describe('parseDiscoveredPlaces()', () => {
+  it('parses valid places JSON into POI array with distances', () => {
+    const raw = JSON.stringify({
+      places: [
+        {
+          name: 'Eiffel Tower',
+          cat: 'tourism',
+          subcat: 'attraction',
+          lat: 48.8584,
+          lon: 2.2945,
+          address: 'Champ de Mars',
+          teaser: 'Iconic tower.',
+        },
+      ],
+    });
+
+    const pois = parseDiscoveredPlaces(raw, 48.8566, 2.3522);
+    expect(pois).toHaveLength(1);
+    expect(pois[0]!.tags.name).toBe('Eiffel Tower');
+    expect(pois[0]!.tags.tourism).toBe('attraction');
+    expect(pois[0]!._lat).toBe(48.8584);
+    expect(pois[0]!._lon).toBe(2.2945);
+    expect(pois[0]!._dist).toBeGreaterThan(0);
+  });
+
+  it('filters out invalid or non-numeric place objects', () => {
+    const raw = JSON.stringify({
+      places: [
+        { name: 'Missing lat/lon' },
+        { name: 'Valid', lat: 48.85, lon: 2.35 },
+      ],
+    });
+
+    const pois = parseDiscoveredPlaces(raw, 48.85, 2.35);
+    expect(pois).toHaveLength(1);
+    expect(pois[0]!.tags.name).toBe('Valid');
+  });
+
+  it('extracts places from markdown fenced JSON', () => {
+    const raw = '```json\n{"places":[{"name":"Fence Place","lat":48.8,"lon":2.3}]}\n```';
+    const pois = parseDiscoveredPlaces(raw, 48.8, 2.3);
+    expect(pois).toHaveLength(1);
+    expect(pois[0]!.tags.name).toBe('Fence Place');
   });
 });
