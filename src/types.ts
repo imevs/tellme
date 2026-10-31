@@ -103,12 +103,8 @@ export interface WikidataFactDetails {
 export interface GooglePlaceDetails {
   id?: string | undefined;
   name?: string | undefined;
-  rating?: number | undefined;
-  userRatingCount?: number | undefined;
   openNow?: boolean | undefined;
   websiteUri?: string | undefined;
-  phoneNumber?: string | undefined;
-  priceLevel?: string | undefined;
   formattedAddress?: string | undefined;
 }
 

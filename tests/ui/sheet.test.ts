@@ -65,12 +65,8 @@ describe('Sheet UI (src/ui/sheet.ts)', () => {
       },
       googlePlace: {
         id: 'ChIJLU7jZClu5kcR4PcOOO6p3I0',
-        rating: 4.7,
-        userRatingCount: 499618,
         openNow: true,
         websiteUri: 'https://www.toureiffel.paris/fr',
-        phoneNumber: '0892 70 12 39',
-        priceLevel: '$$ (Moderate)',
       },
       descriptionHtml: 'The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars.',
       terms: ['Eiffel Tower'],
@@ -94,13 +90,14 @@ describe('Sheet UI (src/ui/sheet.ts)', () => {
     expect(html).toContain('330 m');
     expect(html).toContain('Stéphen Sauvestre');
 
-    // Google Places data
-    expect(html).toContain('4.7 ★');
-    expect(html).toContain('499,618 reviews');
+    // Google Places data (open status and website action)
     expect(html).toContain('Open Now');
-    expect(html).toContain('$$ (Moderate)');
     expect(html).toContain('https://www.toureiffel.paris/fr');
-    expect(html).toContain('0892 70 12 39');
+
+    // Excluded from sheet: rating, reviews, prices, and phone numbers
+    expect(html).not.toContain('Google Rating');
+    expect(html).not.toContain('Price Level');
+    expect(html).not.toContain('tel:');
 
     // Interesting facts
     expect(html).toContain('Interesting Facts &amp; Highlights');

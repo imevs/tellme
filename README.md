@@ -19,7 +19,7 @@ No typing is required—users can dive deeper into contextual narratives and con
   - 🧱 **Construction Materials**.
 - **Interesting Facts & Highlights:** Synthesizes structured Wikidata properties into concise, engaging trivia and highlights.
 - **OpenStreetMap Reverse Geocoding:** Resolves exact address, feature type, and OSM tags using OpenStreetMap Nominatim with Komoot Photon mirror fallback.
-- **Google Places API Integration:** Enriches landmarks and businesses with Google ratings (⭐), user review count, real-time open status (`Open Now` / `Closed`), price tier (`$$`), direct website link, and phone call action button.
+- **Google Places API Integration:** Enriches landmarks and businesses with real-time open status (`Open Now` / `Closed`) and direct official website links (ratings, prices, and phone numbers are explicitly excluded to maintain a clean, uncluttered card).
 - **Strict Quota & Rate Limiting:** Google Places API calls are guarded by a multi-tier cache (in-memory + persistent 24-hour `localStorage`) and a daily call quota cap (`gp_calls_YYYY-MM-DD`) to keep usage within limits.
 - **Nearby Places Discovery:** Automatically queries Wikipedia GeoSearch as you pan and zoom to show top attractions, historic sites, parks, and dining spots.
 - **Category Filtering:** Filter places by **All**, **Sights** (🏛️), **Historic** (🏰), **Food** (☕), **Parks** (🌿), and **Shops** (🛍️).
@@ -38,7 +38,7 @@ The project is built as a modular TypeScript application utilizing an observable
 - **Map Engine:** Leaflet (`leaflet`)
 - **APIs:** OpenStreetMap Nominatim, Komoot Photon, Wikidata Query Service (WDQS SPARQL), Google Places API (New), Wikipedia API
 - **Build Tool:** Vite
-- **Testing:** Vitest + jsdom (120 passing tests)
+- **Testing:** Vitest + jsdom (119 passing tests)
 
 ### Project Structure
 
@@ -77,7 +77,7 @@ TellMe/
     ├── api/
     │   ├── osm.test.ts         # OSM parsing and address formatting tests
     │   ├── wikidata.test.ts    # Wikidata SPARQL aggregation & date formatter tests
-    │   ├── googlePlaces.test.ts# Google Places response parser, pricing, and quota cache tests
+    │   ├── googlePlaces.test.ts# Google Places response parser and quota cache tests
     │   ├── places.test.ts      # GeoSearch parsing tests
     │   ├── wiki.test.ts        # Extract cleaner and keyword matching tests
     │   ├── overpass.test.ts    # Haversine distance and emoji mappings tests
@@ -95,7 +95,7 @@ TellMe/
 1. **Typed Observable Store (`src/store.ts`):** 
    Replaces global mutable state. All state changes flow through `store.update()`, and UI components subscribe to state changes. State is strictly typed via `AppState`.
 2. **Pure Functions for Data & Business Logic:**
-   Data parsers, date formatting (`formatConstructionDate`), height formatting (`formatHeight`), distance calculation (`haversineKm`), Google Places parsing and formatting (`formatPriceLevel`), and DOM utilities (`esc` for XSS prevention) are pure functions, enabling 100% test coverage without browser dependencies.
+   Data parsers, date formatting (`formatConstructionDate`), height formatting (`formatHeight`), distance calculation (`haversineKm`), Google Places parsing, and DOM utilities (`esc` for XSS prevention) are pure functions, enabling 100% test coverage without browser dependencies.
 3. **Decoupled Orchestration (`src/main.ts`):**
    UI components and network modules do not import each other. `main.ts` acts as the coordinator, connecting map clicks and POI selections to parallel data fetching pipelines (OSM + Wikidata + Google Places + Wikipedia).
 4. **Resilient Data Retrieval & Abort Handling:**

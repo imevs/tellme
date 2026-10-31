@@ -69,7 +69,7 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     );
   }
 
-  // Google Places action links (Website & Phone)
+  // Google Places action links (Website)
   const actions: string[] = [];
   if (info.googlePlace?.websiteUri) {
     actions.push(`
@@ -78,35 +78,12 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
       </a>
     `);
   }
-  if (info.googlePlace?.phoneNumber) {
-    const telClean = info.googlePlace.phoneNumber.replace(/[^\d+]/g, '');
-    actions.push(`
-      <a href="tel:${esc(telClean)}" class="place-action-btn">
-        <span>📞</span> ${esc(info.googlePlace.phoneNumber)}
-      </a>
-    `);
-  }
   if (actions.length > 0) {
     sections.push(`<div class="place-actions-row">${actions.join('')}</div>`);
   }
 
-  // Quick facts cards (Construction date, Rating, Status, Height, Architect, Style, etc.)
+  // Quick facts cards (Construction date, Status, Height, Architect, Style, etc.)
   const cards: string[] = [];
-
-  if (info.googlePlace?.rating != null) {
-    const countStr = info.googlePlace.userRatingCount
-      ? ` <span class="fact-sub">(${info.googlePlace.userRatingCount.toLocaleString()} reviews)</span>`
-      : '';
-    cards.push(`
-      <div class="fact-card">
-        <div class="fact-icon">⭐</div>
-        <div class="fact-body">
-          <div class="fact-label">Google Rating</div>
-          <div class="fact-val">${info.googlePlace.rating} ★${countStr}</div>
-        </div>
-      </div>
-    `);
-  }
 
   if (info.googlePlace?.openNow !== undefined) {
     cards.push(`
@@ -115,18 +92,6 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
         <div class="fact-body">
           <div class="fact-label">Status</div>
           <div class="fact-val">${info.googlePlace.openNow ? '<span class="status-open">Open Now</span>' : '<span class="status-closed">Closed</span>'}</div>
-        </div>
-      </div>
-    `);
-  }
-
-  if (info.googlePlace?.priceLevel) {
-    cards.push(`
-      <div class="fact-card">
-        <div class="fact-icon">💳</div>
-        <div class="fact-body">
-          <div class="fact-label">Price Level</div>
-          <div class="fact-val">${esc(info.googlePlace.priceLevel)}</div>
         </div>
       </div>
     `);

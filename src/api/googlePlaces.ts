@@ -42,24 +42,6 @@ export function canMakeGooglePlacesCall(): boolean {
 
 // ── Pure Helpers & Formatters ───────────────────────────────
 
-export function formatPriceLevel(level?: string): string | undefined {
-  if (!level) return undefined;
-  switch (level.toUpperCase()) {
-    case 'PRICE_LEVEL_FREE':
-      return 'Free';
-    case 'PRICE_LEVEL_INEXPENSIVE':
-      return '$ (Inexpensive)';
-    case 'PRICE_LEVEL_MODERATE':
-      return '$$ (Moderate)';
-    case 'PRICE_LEVEL_EXPENSIVE':
-      return '$$$ (Expensive)';
-    case 'PRICE_LEVEL_VERY_EXPENSIVE':
-      return '$$$$ (Very Expensive)';
-    default:
-      return undefined;
-  }
-}
-
 export function parseGooglePlaceResponse(raw: unknown): GooglePlaceDetails | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const data = raw as Record<string, unknown>;
@@ -75,9 +57,6 @@ export function parseGooglePlaceResponse(raw: unknown): GooglePlaceDetails | nul
     ? String((first['displayName'] as Record<string, unknown>)['text'] || '')
     : undefined;
 
-  const rating = typeof first['rating'] === 'number' ? first['rating'] : undefined;
-  const userRatingCount = typeof first['userRatingCount'] === 'number' ? first['userRatingCount'] : undefined;
-
   const currentOpeningHours = typeof first['currentOpeningHours'] === 'object' && first['currentOpeningHours'] !== null
     ? (first['currentOpeningHours'] as Record<string, unknown>)
     : undefined;
@@ -87,15 +66,6 @@ export function parseGooglePlaceResponse(raw: unknown): GooglePlaceDetails | nul
     ? first['websiteUri']
     : undefined;
 
-  const phoneNumber = typeof first['nationalPhoneNumber'] === 'string'
-    ? first['nationalPhoneNumber']
-    : typeof first['internationalPhoneNumber'] === 'string'
-    ? first['internationalPhoneNumber']
-    : undefined;
-
-  const rawPriceLevel = typeof first['priceLevel'] === 'string' ? first['priceLevel'] : undefined;
-  const priceLevel = formatPriceLevel(rawPriceLevel);
-
   const formattedAddress = typeof first['formattedAddress'] === 'string'
     ? first['formattedAddress']
     : undefined;
@@ -103,12 +73,8 @@ export function parseGooglePlaceResponse(raw: unknown): GooglePlaceDetails | nul
   return {
     id,
     name: displayName,
-    rating,
-    userRatingCount,
     openNow,
     websiteUri,
-    phoneNumber,
-    priceLevel,
     formattedAddress,
   };
 }
@@ -210,12 +176,8 @@ export async function fetchGooglePlaceDetails(
       'places.id',
       'places.displayName',
       'places.formattedAddress',
-      'places.rating',
-      'places.userRatingCount',
       'places.currentOpeningHours.openNow',
       'places.websiteUri',
-      'places.nationalPhoneNumber',
-      'places.priceLevel',
     ].join(',');
 
     const res = await fetch(GOOGLE_PLACES_SEARCH_URL, {
