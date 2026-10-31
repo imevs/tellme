@@ -10,6 +10,9 @@ export const PHOTON_REVERSE_ENDPOINT = 'https://photon.komoot.io/reverse';
 export const WIKIDATA_SPARQL_ENDPOINT = 'https://query.wikidata.org/sparql';
 export const WIKIDATA_API_ENDPOINT = 'https://www.wikidata.org/w/api.php';
 export const WIKIPEDIA_API_ENDPOINT = 'https://en.wikipedia.org/w/api.php';
+export const GOOGLE_PLACES_API_KEY = 'AIzaSyDy9nLQ54j6eWrI4nlOSwi5SGn81gRbOtI';
+export const GOOGLE_PLACES_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
+export const GOOGLE_PLACES_MAX_DAILY_CALLS = 40;
 export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 export const GEMINI_MODEL    = 'gemini-3.8-flash';
 

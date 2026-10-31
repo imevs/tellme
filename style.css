@@ -689,6 +689,75 @@ html, body {
   line-height: 1.3;
   word-break: break-word;
 }
+.fact-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+  margin-left: 2px;
+}
+.status-open {
+  color: #34d399;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.status-open::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+}
+.status-closed {
+  color: #f87171;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.status-closed::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f87171;
+}
+
+/* ─── PLACE ACTION BUTTONS ────────────────────────────── */
+.place-actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.place-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 20px;
+  color: var(--sky);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+}
+.place-action-btn:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: var(--sky);
+  transform: translateY(-1px);
+}
+.place-action-btn:active {
+  transform: scale(0.96);
+}
 
 /* ─── INTERESTING FACTS SECTION ──────────────────────── */
 .facts-section-box {

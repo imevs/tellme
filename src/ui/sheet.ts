@@ -69,8 +69,68 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     );
   }
 
-  // Quick facts cards (Construction date, Height, Architect, Style, etc.)
+  // Google Places action links (Website & Phone)
+  const actions: string[] = [];
+  if (info.googlePlace?.websiteUri) {
+    actions.push(`
+      <a href="${esc(info.googlePlace.websiteUri)}" target="_blank" rel="noopener" class="place-action-btn">
+        <span>🌐</span> Visit Website ↗
+      </a>
+    `);
+  }
+  if (info.googlePlace?.phoneNumber) {
+    const telClean = info.googlePlace.phoneNumber.replace(/[^\d+]/g, '');
+    actions.push(`
+      <a href="tel:${esc(telClean)}" class="place-action-btn">
+        <span>📞</span> ${esc(info.googlePlace.phoneNumber)}
+      </a>
+    `);
+  }
+  if (actions.length > 0) {
+    sections.push(`<div class="place-actions-row">${actions.join('')}</div>`);
+  }
+
+  // Quick facts cards (Construction date, Rating, Status, Height, Architect, Style, etc.)
   const cards: string[] = [];
+
+  if (info.googlePlace?.rating != null) {
+    const countStr = info.googlePlace.userRatingCount
+      ? ` <span class="fact-sub">(${info.googlePlace.userRatingCount.toLocaleString()} reviews)</span>`
+      : '';
+    cards.push(`
+      <div class="fact-card">
+        <div class="fact-icon">⭐</div>
+        <div class="fact-body">
+          <div class="fact-label">Google Rating</div>
+          <div class="fact-val">${info.googlePlace.rating} ★${countStr}</div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (info.googlePlace?.openNow !== undefined) {
+    cards.push(`
+      <div class="fact-card">
+        <div class="fact-icon">🕒</div>
+        <div class="fact-body">
+          <div class="fact-label">Status</div>
+          <div class="fact-val">${info.googlePlace.openNow ? '<span class="status-open">Open Now</span>' : '<span class="status-closed">Closed</span>'}</div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (info.googlePlace?.priceLevel) {
+    cards.push(`
+      <div class="fact-card">
+        <div class="fact-icon">💳</div>
+        <div class="fact-body">
+          <div class="fact-label">Price Level</div>
+          <div class="fact-val">${esc(info.googlePlace.priceLevel)}</div>
+        </div>
+      </div>
+    `);
+  }
 
   const constructionDate = info.wikidata?.inceptionDate ?? info.osm?.startDate;
   if (constructionDate) {
@@ -169,13 +229,14 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     `);
   }
 
-  if (info.address) {
+  const displayAddress = info.address || info.googlePlace?.formattedAddress;
+  if (displayAddress) {
     cards.push(`
       <div class="fact-card fact-card-wide">
         <div class="fact-icon">📍</div>
         <div class="fact-body">
           <div class="fact-label">Location / Address</div>
-          <div class="fact-val">${esc(info.address)}</div>
+          <div class="fact-val">${esc(displayAddress)}</div>
         </div>
       </div>
     `);

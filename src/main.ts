@@ -19,6 +19,7 @@ import { fetchNearbyPlaces } from './api/places';
 import { fetchWikiDescription } from './api/wiki';
 import { fetchOsmObjectAt, formatOsmAddress, inferOsmEmoji } from './api/osm';
 import { fetchWikidataDetails } from './api/wikidata';
+import { fetchGooglePlaceDetails } from './api/googlePlaces';
 import { highlightTerms } from './ui/dom';
 import { DEFAULT_PARIS_POIS } from './api/gemini';
 import {
@@ -210,10 +211,10 @@ async function handleFetchEnrichedPlace(params: {
     $(IDS.SHEET_TITLE).textContent    = name;
     $(IDS.SHEET_SUBTITLE).textContent = `${em} ${category} • OpenStreetMap & Wikidata`;
 
-    // 2. Fetch Wikidata Query Service facts in parallel with Wikipedia narrative
+    // 2. Fetch Wikidata Query Service, Wikipedia narrative, and Google Places in parallel
     const qid = osm?.wikidataId || params.wikidataId;
 
-    const [wikidata, wikiResult] = await Promise.all([
+    const [wikidata, wikiResult, googlePlace] = await Promise.all([
       fetchWikidataDetails({
         qid,
         lat: params.lat,
@@ -225,6 +226,10 @@ async function handleFetchEnrichedPlace(params: {
       }),
       fetchWikiDescription(name).catch(err => {
         console.warn('Wikipedia narrative warning:', err);
+        return null;
+      }),
+      fetchGooglePlaceDetails(name, params.lat, params.lon).catch(err => {
+        console.warn('Google Places warning:', err);
         return null;
       }),
     ]);
@@ -245,6 +250,7 @@ async function handleFetchEnrichedPlace(params: {
       address,
       osm,
       wikidata,
+      googlePlace,
       descriptionHtml,
       terms,
       thumbnail,

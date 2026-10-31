@@ -99,7 +99,20 @@ export interface WikidataFactDetails {
   wikipediaUrl?: string | null | undefined;
 }
 
-// ── Enriched Place Info (OSM + Wikidata + Wikipedia) ───
+// ── Google Places Details ──────────────────────────────
+export interface GooglePlaceDetails {
+  id?: string | undefined;
+  name?: string | undefined;
+  rating?: number | undefined;
+  userRatingCount?: number | undefined;
+  openNow?: boolean | undefined;
+  websiteUri?: string | undefined;
+  phoneNumber?: string | undefined;
+  priceLevel?: string | undefined;
+  formattedAddress?: string | undefined;
+}
+
+// ── Enriched Place Info (OSM + Wikidata + Wikipedia + Google Places) ───
 export interface EnrichedPlaceInfo {
   name: string;
   subtitle: string;
@@ -111,6 +124,7 @@ export interface EnrichedPlaceInfo {
   address?: string | undefined;
   osm?: OsmFeature | null | undefined;
   wikidata?: WikidataFactDetails | null | undefined;
+  googlePlace?: GooglePlaceDetails | null | undefined;
   descriptionHtml?: string | undefined;
   terms: string[];
   thumbnail?: string | undefined;
