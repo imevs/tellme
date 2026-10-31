@@ -6,7 +6,10 @@ import { IDS, CSS, MAP_TILES, DEFAULT_CENTER, DEFAULT_ZOOM, DEBOUNCE_MAP_MS } fr
 import { poiEmoji } from '../api/overpass';
 import type { POI } from '../types';
 
-export function initMap(onViewChange: () => void): void {
+export function initMap(
+  onViewChange: () => void,
+  onMapClick?: (lat: number, lon: number) => void,
+): void {
   const map = L.map(IDS.MAP, {
     center:           DEFAULT_CENTER,
     zoom:             DEFAULT_ZOOM,
@@ -24,6 +27,12 @@ export function initMap(onViewChange: () => void): void {
   const debouncedLoad = debounce(onViewChange, DEBOUNCE_MAP_MS);
   map.on('moveend', debouncedLoad);
   map.on('zoomend', debouncedLoad);
+
+  if (onMapClick) {
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    });
+  }
 
   store.update({ map });
 }
@@ -76,6 +85,37 @@ export function addUserDot(lat: number, lng: number): void {
 
   const marker = L.marker([lat, lng], { icon, zIndexOffset: 1000 }).addTo(map);
   store.update({ userMarker: marker });
+}
+
+export function setClickedMarker(lat: number, lon: number): void {
+  const { map, clickedMarker } = store.get();
+  if (!map) return;
+
+  clickedMarker?.remove();
+
+  const html =
+    `<div class="clicked-pin-wrap">` +
+    `<div class="clicked-pin-pulse"></div>` +
+    `<div class="clicked-pin-core"><span class="clicked-pin-icon">🎯</span></div>` +
+    `</div>`;
+
+  const icon = L.divIcon({
+    html,
+    className: '',
+    iconSize:  [44, 44],
+    iconAnchor:[22, 38],
+  });
+
+  const marker = L.marker([lat, lon], { icon, zIndexOffset: 2000 }).addTo(map);
+  store.update({ clickedMarker: marker });
+}
+
+export function clearClickedMarker(): void {
+  const { clickedMarker } = store.get();
+  if (clickedMarker) {
+    clickedMarker.remove();
+    store.update({ clickedMarker: null });
+  }
 }
 
 export function getMapBBox(): string | null {

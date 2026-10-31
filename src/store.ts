@@ -5,6 +5,7 @@ const INITIAL_STATE: AppState = {
   apiKey:       localStorage.getItem(STORAGE_KEY_API) ?? '',
   map:          null,
   userMarker:   null,
+  clickedMarker:null,
   markers:      [],
   pois:         [],
   activeCat:    'all',

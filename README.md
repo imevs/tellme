@@ -1,26 +1,42 @@
-# TellMe
+# TellMe — Tap to Explore
 
-A mobile-first, tap-to-explore travel application powered by OpenStreetMap and Gemini AI. TellMe allows users to discover interesting places around them by simply panning the map and tapping on points of interest (POIs). No typing is required—users can dive deeper into AI-generated descriptions by tapping highlighted terms.
+A modern, mobile-first travel discovery application powered by **OpenStreetMap**, **Wikidata Query Service (WDQS)**, and **Wikipedia**. TellMe lets users explore cities and landmarks around the globe simply by panning the map, clicking on any building or object on the map, or tapping discovered points of interest (POIs).
+
+No typing is required—users can dive deeper into contextual narratives and concepts by tapping blue interactive keywords.
+
+---
 
 ## Features
 
-- **Interactive Map:** Powered by Leaflet and CartoDB Dark Matter tiles.
-- **Live POI Fetching:** Automatically queries the Overpass API (OpenStreetMap) as you pan and zoom.
-- **Smart Filtering:** Filter places by Sights, Historic, Food, Parks, and Shops.
-- **AI Descriptions:** Uses Gemini 2.0 Flash to generate vivid, contextual descriptions of places.
-- **Tap-to-Explore:** AI descriptions highlight interesting terms. Tapping a term triggers a follow-up query, allowing deep exploration without a keyboard.
-- **Responsive UI:** Glassmorphism design system optimized for mobile devices with swipe-to-close gestures.
+- **Interactive Map Object Click:** Click on any building, monument, landmark, or street to inspect it. Drops a pulsating animated pin and resolves details from OpenStreetMap and Wikidata.
+- **Wikidata Query Service (WDQS) Integration:** Retrieves rich historical and architectural data:
+  - 📅 **Date of Construction / Inception** and official opening dates.
+  - 📐 **Height** and dimensions.
+  - 🏛️ **Architect & Builder**.
+  - 🎨 **Architectural Style**.
+  - 🏷️ **Named After**.
+  - 📜 **Heritage Designation** (e.g. Historic Monument, UNESCO).
+  - 🧱 **Construction Materials**.
+- **Interesting Facts & Highlights:** Synthesizes structured Wikidata properties into concise, engaging trivia and highlights.
+- **OpenStreetMap Reverse Geocoding:** Resolves exact address, feature type, and OSM tags using OpenStreetMap Nominatim with Komoot Photon mirror fallback.
+- **Nearby Places Discovery:** Automatically queries Wikipedia GeoSearch as you pan and zoom to show top attractions, historic sites, parks, and dining spots.
+- **Category Filtering:** Filter places by **All**, **Sights** (🏛️), **Historic** (🏰), **Food** (☕), **Parks** (🌿), and **Shops** (🛍️).
+- **Tap-to-Explore Deep Diving:** Tapping blue highlighted terms in any description triggers an exploratory lookup with breadcrumbs and back navigation.
+- **Glassmorphic Responsive UI:** Sleek dark mode interface tailored for mobile, tablet, and desktop viewports, with swipe-to-close gesture support.
+
+---
 
 ## Architecture
 
-TellMe was recently refactored from a monolithic HTML file into a modern, modular TypeScript application.
+The project is built as a modular TypeScript application utilizing an observable unidirectional store pattern.
 
 ### Tech Stack
 
 - **Core:** TypeScript, HTML5, Vanilla CSS
-- **Map:** Leaflet (`leaflet`)
+- **Map Engine:** Leaflet (`leaflet`)
+- **APIs:** OpenStreetMap Nominatim, Komoot Photon, Wikidata Query Service (WDQS SPARQL), Wikipedia API
 - **Build Tool:** Vite
-- **Testing:** Vitest + jsdom
+- **Testing:** Vitest + jsdom (115 passing tests)
 
 ### Project Structure
 
@@ -29,41 +45,61 @@ TellMe/
 ├── index.html                  # Clean Vite entry point
 ├── style.css                   # Global styles and design tokens
 ├── vite.config.ts              # Vite & Vitest configuration
+├── tsconfig.json               # TypeScript configuration
 ├── src/
-│   ├── main.ts                 # Application entry and orchestration
-│   ├── constants.ts            # Single source of truth for config and DOM IDs
-│   ├── types.ts                # Shared TypeScript interfaces (State, API responses)
+│   ├── main.ts                 # Application orchestration and event wiring
+│   ├── constants.ts            # Single source of truth for config, endpoints, and DOM IDs
+│   ├── types.ts                # TypeScript interfaces (OsmFeature, WikidataFactDetails, POI, AppState)
 │   ├── store.ts                # Typed observable state store
 │   │
 │   ├── api/
-│   │   ├── overpass.ts         # OpenStreetMap queries, distance calculation, parsing
-│   │   └── gemini.ts           # Prompt building and AI response parsing
+│   │   ├── osm.ts              # OpenStreetMap reverse geocoding and tag parsing
+│   │   ├── wikidata.ts         # Wikidata Query Service SPARQL integration and facts synthesis
+│   │   ├── places.ts           # Wikipedia GeoSearch place discovery
+│   │   ├── wiki.ts             # Wikipedia article extracts and interactive keyword parsing
+│   │   ├── overpass.ts         # Distance calculation (Haversine) & category emoji helpers
+│   │   └── gemini.ts           # Gemini AI fallback POI dataset
 │   │
 │   ├── map/
-│   │   └── leaflet.ts          # Map initialization, markers, geolocation
+│   │   └── leaflet.ts          # Map initialization, custom markers, clicked pin, geolocation
 │   │
 │   └── ui/
-│       ├── cards.ts            # POI card rendering and interaction
-│       ├── sheet.ts            # Description bottom-sheet logic and swipe gestures
+│       ├── cards.ts            # POI card deck rendering and interaction
+│       ├── sheet.ts            # Description bottom-sheet, specs grid, interesting facts, swipe gestures
 │       ├── filters.ts          # Category filter logic
 │       ├── toast.ts            # Toast notification system
-│       └── dom.ts              # XSS prevention, debounce, and generic DOM utilities
+│       └── dom.ts              # XSS sanitization, debouncing, and term highlighter
 │
-└── tests/                      # Vitest unit tests
+└── tests/                      # Automated Vitest test suite
+    ├── api/
+    │   ├── osm.test.ts         # OSM parsing and address formatting tests
+    │   ├── wikidata.test.ts    # Wikidata SPARQL aggregation & date formatter tests
+    │   ├── places.test.ts      # GeoSearch parsing tests
+    │   ├── wiki.test.ts        # Extract cleaner and keyword matching tests
+    │   ├── overpass.test.ts    # Haversine distance and emoji mappings tests
+    │   └── gemini.test.ts      # AI response validator tests
+    └── ui/
+        ├── sheet.test.ts       # Bottom sheet rendering and conditional hint tests
+        ├── cards.test.ts       # POI deck rendering and selection tests
+        └── dom.test.ts         # HTML escaping and term highlighting tests
 ```
 
-### Key Architectural Decisions
+---
+
+## Key Architectural Decisions
 
 1. **Typed Observable Store (`src/store.ts`):** 
-   Replaces global mutable state. All state changes flow through `store.update()`, and the store can be subscribed to. The state is strictly typed via `AppState`.
-2. **Pure Functions for Business Logic:**
-   API prompt generation, POI parsing, distance calculation (Haversine formula), and DOM utility functions (like `esc` for XSS prevention) are extracted as pure functions. This enables fast, reliable unit testing without a browser environment.
-3. **Event Orchestration (`src/main.ts`):**
-   Modules do not deeply couple with each other. `main.ts` acts as the orchestrator, hooking up events from the UI (like `onSelectPOI`) to API fetches and map movements.
-4. **Race Condition Prevention:**
-   Both `gemini.ts` and `overpass.ts` use `AbortController` to cancel in-flight network requests when a new request is triggered by rapid user interaction.
-5. **Security:**
-   All user-facing text and AI-generated content is sanitized via `esc()` before being injected into the DOM, neutralizing XSS risks.
+   Replaces global mutable state. All state changes flow through `store.update()`, and UI components subscribe to state changes. State is strictly typed via `AppState`.
+2. **Pure Functions for Data & Business Logic:**
+   Data parsers, date formatting (`formatConstructionDate`), height formatting (`formatHeight`), distance calculation (`haversineKm`), and DOM utilities (`esc` for XSS prevention) are pure functions, enabling 100% test coverage without browser dependencies.
+3. **Decoupled Orchestration (`src/main.ts`):**
+   UI components and network modules do not import each other. `main.ts` acts as the coordinator, connecting map clicks and POI selections to the data pipeline.
+4. **Resilient Data Retrieval & Abort Handling:**
+   Network modules use `AbortController` to cancel in-flight requests during rapid panning or tapping. Fallback mechanisms (Nominatim → Photon, Wikidata QID → Spatial `wikibase:around` → Entity Search) ensure high availability without Overpass dependency.
+5. **Security & Sanitization:**
+   All text and remote content injected into the DOM is sanitized via `esc()`, eliminating XSS vulnerabilities.
+
+---
 
 ## Setup & Development
 
@@ -72,21 +108,17 @@ TellMe/
    npm install
    ```
 
-2. **Run the development server:**
+2. **Run development server:**
    ```bash
    npm run dev
    ```
 
 3. **Run tests:**
    ```bash
-   npm run test
+   npm test
    ```
 
 4. **Build for production:**
    ```bash
    npm run build
    ```
-
-## API Keys
-
-The app queries the Overpass API for free. For AI descriptions, users are prompted to enter their own **Gemini API Key** directly in the app. The key is securely stored in the browser's `localStorage` and never sent to our servers.

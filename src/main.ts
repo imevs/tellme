@@ -7,13 +7,19 @@ import { $, $safe } from './ui/dom';
 import { wireFilters } from './ui/filters';
 import { showSkeletons, showEmpty, renderCards, highlightCard } from './ui/cards';
 import {
-  openSheet, closeSheet, goBack, renderDesc, renderError,
+  openSheet, closeSheet, goBack, renderDesc, renderError, renderEnrichedPlace,
   initSwipe, registerExploreCallback,
 } from './ui/sheet';
-import { initMap, setMarkers, highlightMarker, flyTo, locateUser, getMapBBox, getMapZoom, getMapCenter } from './map/leaflet';
+import {
+  initMap, setMarkers, highlightMarker, setClickedMarker, clearClickedMarker,
+  flyTo, locateUser, getMapBBox, getMapZoom, getMapCenter,
+} from './map/leaflet';
 import { poiEmoji, poiCategory, poiAddress } from './api/overpass';
 import { fetchNearbyPlaces } from './api/places';
 import { fetchWikiDescription } from './api/wiki';
+import { fetchOsmObjectAt, formatOsmAddress, inferOsmEmoji } from './api/osm';
+import { fetchWikidataDetails } from './api/wikidata';
+import { highlightTerms } from './ui/dom';
 import { DEFAULT_PARIS_POIS } from './api/gemini';
 import {
   IDS, CSS,
@@ -21,14 +27,14 @@ import {
   MIN_ZOOM_FOR_POIS,
   FLY_TO_ZOOM,
 } from './constants';
-import type { DescRequest, POI } from './types';
+import type { DescRequest, POI, EnrichedPlaceInfo } from './types';
 
 // ── Bootstrap ──────────────────────────────────────────
 
 function boot(): void {
   $safe(IDS.API_MODAL)?.setAttribute('hidden', '');
   registerExploreCallback(handleExploreTerm);
-  initMap(handleViewChange);
+  initMap(handleViewChange, handleMapClick);
   void handleViewChange();
   locateUser(true);
   wireListeners();
@@ -113,6 +119,7 @@ async function handleSelectPOI(i: number): Promise<void> {
   const poi = pois[i];
   if (!poi) return;
 
+  clearClickedMarker();
   const name = poi.tags.name ?? poi.tags['name:en'] ?? 'This Place';
   const addr = poiAddress(poi.tags, poi._lat, poi._lon);
   const cat  = poiCategory(poi.tags);
@@ -124,37 +131,130 @@ async function handleSelectPOI(i: number): Promise<void> {
   flyTo(poi._lat, poi._lon, Math.max(getMapZoom(), FLY_TO_ZOOM));
 
   openSheet(name, `${em} ${cat}`);
-  await handleFetchDesc({ type: 'place', name, addr, cat });
+  await handleFetchEnrichedPlace({
+    name,
+    addr,
+    cat,
+    em,
+    lat: poi._lat,
+    lon: poi._lon,
+    wikidataId: poi.tags['wikidata'],
+  });
+}
+
+// ── Map click (arbitrary location / object) ────────────
+
+async function handleMapClick(lat: number, lon: number): Promise<void> {
+  setClickedMarker(lat, lon);
+  store.update({ activeIdx: -1, history: [] });
+  highlightCard(-1);
+  highlightMarker(-1);
+
+  openSheet('Inspecting Object…', '🛰️ OpenStreetMap & Wikidata');
+  await handleFetchEnrichedPlace({ lat, lon });
 }
 
 // ── Term exploration ───────────────────────────────────
 
 async function handleExploreTerm(term: string): Promise<void> {
-  await handleFetchDesc({ type: 'term', term });
+  try {
+    const [result, wikidata] = await Promise.all([
+      fetchWikiDescription(term).catch(() => null),
+      fetchWikidataDetails({ name: term }).catch(() => null),
+    ]);
+
+    if (result) {
+      renderDesc(result.description, result.terms, result.thumbnail);
+    } else if (wikidata && (wikidata.description || wikidata.interestingFacts.length > 0)) {
+      renderEnrichedPlace({
+        name: term,
+        subtitle: '🔍 Explored Concept',
+        category: 'concept',
+        emoji: '💡',
+        lat: 0,
+        lon: 0,
+        wikidata,
+        descriptionHtml: highlightTerms(wikidata.description || '', [term]),
+        terms: [term],
+      });
+    } else {
+      renderError(`Could not find details for "${term}"`);
+    }
+  } catch (err: unknown) {
+    if ((err as Error).name === 'AbortError') return;
+    renderError((err as Error).message ?? 'Exploration failed');
+  }
 }
 
-// ── Place & Term description fetch (Wikipedia) ─────────
+// ── Enriched fetch (OpenStreetMap + Wikidata Query Service) ──
 
-async function handleFetchDesc(req: DescRequest): Promise<void> {
-  const query = req.type === 'place' ? req.name : req.term;
-
+async function handleFetchEnrichedPlace(params: {
+  name?: string | undefined;
+  addr?: string | undefined;
+  cat?: string | undefined;
+  em?: string | undefined;
+  lat: number;
+  lon: number;
+  wikidataId?: string | undefined;
+}): Promise<void> {
   try {
-    const result = await fetchWikiDescription(query);
-    renderDesc(result.description, result.terms, result.thumbnail);
+    // 1. Fetch OpenStreetMap object at (lat, lon)
+    const osm = await fetchOsmObjectAt(params.lat, params.lon).catch(() => null);
+
+    const name = osm?.name || params.name || 'Map Object';
+    const category = osm?.category || params.cat || 'place';
+    const em = params.em || (osm ? inferOsmEmoji(osm.category, osm.type) : '📍');
+    const address = (osm ? formatOsmAddress(osm) : null) || params.addr || `${params.lat.toFixed(4)}, ${params.lon.toFixed(4)}`;
+
+    // Update sheet header immediately with resolved name
+    $(IDS.SHEET_TITLE).textContent    = name;
+    $(IDS.SHEET_SUBTITLE).textContent = `${em} ${category} • OpenStreetMap & Wikidata`;
+
+    // 2. Fetch Wikidata Query Service facts in parallel with Wikipedia narrative
+    const qid = osm?.wikidataId || params.wikidataId;
+
+    const [wikidata, wikiResult] = await Promise.all([
+      fetchWikidataDetails({
+        qid,
+        lat: params.lat,
+        lon: params.lon,
+        name,
+      }).catch(err => {
+        console.warn('Wikidata Query Service warning:', err);
+        return null;
+      }),
+      fetchWikiDescription(name).catch(err => {
+        console.warn('Wikipedia narrative warning:', err);
+        return null;
+      }),
+    ]);
+
+    // Build interactive highlight terms
+    const terms = wikiResult?.terms ?? [name];
+    const rawDesc = wikiResult?.description || wikidata?.description || osm?.tags['description'] || '';
+    const descriptionHtml = rawDesc ? highlightTerms(rawDesc, terms) : undefined;
+    const thumbnail = wikiResult?.thumbnail;
+
+    const info: EnrichedPlaceInfo = {
+      name,
+      subtitle: `${em} ${category}`,
+      category,
+      emoji: em,
+      lat: params.lat,
+      lon: params.lon,
+      address,
+      osm,
+      wikidata,
+      descriptionHtml,
+      terms,
+      thumbnail,
+    };
+
+    renderEnrichedPlace(info);
   } catch (err: unknown) {
     if ((err as Error).name === 'AbortError') return;
     console.error(err);
-
-    // Fallback if specific search failed: use active place tags description
-    if (req.type === 'place') {
-      const activePoi = store.get().pois[store.get().activeIdx];
-      if (activePoi?.tags.description) {
-        renderDesc(activePoi.tags.description, [activePoi.tags.name ?? 'Explore']);
-        return;
-      }
-    }
-
-    renderError((err as Error).message ?? 'Could not find details on Wikipedia');
+    renderError((err as Error).message ?? 'Could not retrieve data from OpenStreetMap and Wikidata Query Service');
   }
 }
 
@@ -174,7 +274,17 @@ function saveKey(): void {
   const { pendingFetch } = store.get();
   if (pendingFetch) {
     store.update({ pendingFetch: null });
-    void handleFetchDesc(pendingFetch);
+    if (pendingFetch.type === 'term') {
+      void handleExploreTerm(pendingFetch.term);
+    } else {
+      void handleFetchEnrichedPlace({
+        name: pendingFetch.name,
+        addr: pendingFetch.addr,
+        cat: pendingFetch.cat,
+        lat: 0,
+        lon: 0,
+      });
+    }
   } else {
     void handleViewChange();
   }

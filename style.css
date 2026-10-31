@@ -155,6 +155,54 @@ html, body {
   50%      { box-shadow: 0 0 0 10px rgba(56,189,248,0.05); }
 }
 
+/* ─── CLICKED TARGET PIN ─────────────────────────────── */
+.clicked-pin-wrap {
+  width: 44px;
+  height: 44px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.clicked-pin-pulse {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.4);
+  animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+@keyframes pulse-ring {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  70%  { transform: scale(1.55); opacity: 0.1; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.clicked-pin-core {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+  border: 2px solid #ffffff;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 4px 16px rgba(56,189,248,0.5), 0 0 0 2px rgba(2,132,199,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  animation: bounce-drop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes bounce-drop {
+  0%   { transform: translateY(-24px) rotate(-45deg) scale(0.7); opacity: 0; }
+  100% { transform: translateY(0) rotate(-45deg) scale(1); opacity: 1; }
+}
+.clicked-pin-icon {
+  transform: rotate(45deg);
+  font-size: 14px;
+  line-height: 1;
+}
+
 /* ─── TOP BAR ────────────────────────────────────────── */
 #top-bar {
   position: absolute;
@@ -585,6 +633,165 @@ html, body {
   display: inline;
 }
 .term:active { background: rgba(56,189,248,0.14); color: #93c5fd; }
+
+/* ─── ENRICHED FACTS & SPECIFICATIONS ────────────────── */
+.facts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+@media (max-width: 380px) {
+  .facts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.fact-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  transition: border-color 0.2s, background 0.2s;
+}
+.fact-card:hover {
+  background: var(--surface-h);
+  border-color: var(--border-h);
+}
+.fact-card-wide {
+  grid-column: 1 / -1;
+}
+.fact-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fact-body {
+  min-width: 0;
+  flex: 1;
+}
+.fact-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-3);
+  margin-bottom: 2px;
+}
+.fact-val {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+/* ─── INTERESTING FACTS SECTION ──────────────────────── */
+.facts-section-box {
+  background: linear-gradient(135deg, rgba(245,158,11,0.08) 0%, rgba(56,189,248,0.06) 100%);
+  border: 1px solid rgba(245,158,11,0.22);
+  border-radius: var(--r-sm);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+.facts-section-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--amber-light);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+.facts-sparkle {
+  font-size: 14px;
+}
+.facts-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fact-bullet-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.bullet-dot {
+  color: var(--amber);
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.bullet-text {
+  flex: 1;
+}
+
+/* ─── NARRATIVE & OVERVIEW ───────────────────────────── */
+.sheet-narrative-section {
+  margin-top: 6px;
+  margin-bottom: 16px;
+}
+.sheet-narrative-text {
+  font-size: 15px;
+  line-height: 1.72;
+  color: var(--text);
+}
+
+/* ─── DATA SOURCE BADGES ─────────────────────────────── */
+.source-pills-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+}
+.source-pills-label {
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+}
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+.source-pill:hover {
+  color: var(--sky);
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.35);
+  transform: translateY(-1px);
+}
+.source-pill:active {
+  transform: scale(0.96);
+}
 
 /* Error */
 .sheet-error {

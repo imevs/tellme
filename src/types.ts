@@ -56,6 +56,66 @@ export interface TermDescRequest {
 
 export type DescRequest = PlaceDescRequest | TermDescRequest;
 
+// ── OpenStreetMap Feature ──────────────────────────────
+export interface OsmFeature {
+  osmId: number;
+  osmType: 'node' | 'way' | 'relation';
+  name: string;
+  category: string;
+  type: string;
+  displayName: string;
+  address: {
+    road?: string | undefined;
+    houseNumber?: string | undefined;
+    suburb?: string | undefined;
+    city?: string | undefined;
+    country?: string | undefined;
+    postcode?: string | undefined;
+  };
+  tags: Record<string, string>;
+  wikidataId?: string | undefined;
+  wikipedia?: string | undefined;
+  startDate?: string | undefined;
+  lat: number;
+  lon: number;
+}
+
+// ── Wikidata Facts ─────────────────────────────────────
+export interface WikidataFactDetails {
+  qid: string;
+  label: string;
+  description: string;
+  inceptionDate?: string | null | undefined;
+  openingDate?: string | null | undefined;
+  height?: string | null | undefined;
+  architects: string[];
+  styles: string[];
+  namedAfter: string[];
+  heritage: string[];
+  instances: string[];
+  materials: string[];
+  interestingFacts: string[];
+  wikipediaTitle?: string | null | undefined;
+  wikipediaUrl?: string | null | undefined;
+}
+
+// ── Enriched Place Info (OSM + Wikidata + Wikipedia) ───
+export interface EnrichedPlaceInfo {
+  name: string;
+  subtitle: string;
+  category: string;
+  emoji: string;
+  lat: number;
+  lon: number;
+  distanceKm?: number | null | undefined;
+  address?: string | undefined;
+  osm?: OsmFeature | null | undefined;
+  wikidata?: WikidataFactDetails | null | undefined;
+  descriptionHtml?: string | undefined;
+  terms: string[];
+  thumbnail?: string | undefined;
+}
+
 // ── Navigation history entry ───────────────────────────
 export interface HistoryEntry {
   title:    string;
@@ -65,16 +125,18 @@ export interface HistoryEntry {
 
 // ── Application state ──────────────────────────────────
 export interface AppState {
-  readonly apiKey:       string;
-  readonly map:          LeafletMap | null;
-  readonly userMarker:   Marker | null;
-  readonly markers:      Marker[];
-  readonly pois:         POI[];
-  readonly activeCat:    string;
-  readonly activeIdx:    number;       // -1 = none selected
-  readonly history:      HistoryEntry[];
-  readonly pendingFetch: DescRequest | null;
+  readonly apiKey:        string;
+  readonly map:           LeafletMap | null;
+  readonly userMarker:    Marker | null;
+  readonly clickedMarker: Marker | null;
+  readonly markers:       Marker[];
+  readonly pois:          POI[];
+  readonly activeCat:     string;
+  readonly activeIdx:     number;       // -1 = none selected
+  readonly history:       HistoryEntry[];
+  readonly pendingFetch:  DescRequest | null;
 }
 
 // ── Store listener ─────────────────────────────────────
 export type StateListener = (state: AppState) => void;
+
