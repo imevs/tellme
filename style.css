@@ -27,7 +27,10 @@ button { font-family: inherit; border: none; background: none; cursor: pointer; 
 }
 
 html, body {
+  width: 100%;
   height: 100%;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -38,9 +41,10 @@ html, body {
 
 /* ─── LAYOUT ─────────────────────────────────────────── */
 #app {
-  position: relative;
-  width: 100vw;
-  height: 100dvh;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -59,9 +63,9 @@ html, body {
 /* ─── CUSTOM ZOOM CONTROLS ───────────────────────────── */
 #zoom-actions {
   position: absolute;
-  top: 120px;
+  top: 124px;
   right: max(14px, env(safe-area-inset-right, 14px));
-  z-index: 100;
+  z-index: 120;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -172,10 +176,15 @@ html, body {
   pointer-events: all;
 }
 #logo {
+  position: absolute;
+  top: 14px;
+  left: max(14px, env(safe-area-inset-left, 14px));
+  z-index: 100;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 9px 16px;
+  pointer-events: all;
 }
 .logo-text {
   font-size: 18px;
@@ -708,6 +717,7 @@ html, body {
     bottom: 0;
   }
   #top-bar { padding: 18px 20px 0; }
+  #logo { top: 18px; left: 20px; }
   #filter-bar { top: 76px; padding: 0 20px; }
   #zoom-actions {
     top: 130px;
@@ -719,10 +729,10 @@ html, body {
 @media (orientation: landscape) {
   /* Move logo to bottom-left corner */
   #logo {
-    position: fixed;
-    bottom: max(14px, env(safe-area-inset-bottom, 14px));
-    left: max(14px, env(safe-area-inset-left, 14px));
-    z-index: 110;
+    top: auto !important;
+    bottom: max(14px, env(safe-area-inset-bottom, 14px)) !important;
+    left: max(14px, env(safe-area-inset-left, 14px)) !important;
+    z-index: 110 !important;
     padding: 7px 14px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     pointer-events: all;
@@ -757,10 +767,15 @@ html, body {
     font-size: 12.5px;
   }
 
-  /* Zoom controls sit right below top-actions */
+  /* Zoom controls sit right below top-actions on the right */
   #zoom-actions {
     top: 66px;
     right: max(14px, env(safe-area-inset-right, 14px));
+    left: auto;
+    bottom: auto;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 120;
   }
 
   /* Compact card strip on right side */
