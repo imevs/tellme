@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: './',
   // Vitest configuration lives here — no separate vitest.config.ts needed
   test: {
     environment: 'jsdom',
@@ -17,3 +18,4 @@ export default defineConfig({
     alias: { '@': '/src' },
   },
 });
+

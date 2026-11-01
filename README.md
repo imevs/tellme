@@ -128,3 +128,22 @@ TellMe/
    ```bash
    npm run build
    ```
+
+---
+
+## Deployment to GitHub Pages
+
+This repository includes a continuous deployment workflow via GitHub Actions (`.github/workflows/deploy.yml`).
+
+### Setup Instructions
+
+1. On GitHub, navigate to your repository settings:
+   - **Settings** → **Pages**
+2. Under **Build and deployment**:
+   - Set **Source** to **GitHub Actions**
+3. Whenever changes are pushed to the `main` branch (or triggered manually via **Actions** → **Deploy to GitHub Pages** → **Run workflow**), the workflow automatically:
+   - Installs dependencies (`npm ci`)
+   - Runs test suite verification (`npm run test:run`)
+   - Builds the production bundle (`npm run build`) with relative asset paths (`base: './'`)
+   - Deploys the `dist/` directory directly to GitHub Pages
+
