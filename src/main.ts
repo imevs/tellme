@@ -224,13 +224,12 @@ async function handleFetchEnrichedPlace(params: {
 
     const address = (osm ? formatOsmAddress(osm) : null) || params.addr || `${params.lat.toFixed(4)}, ${params.lon.toFixed(4)}`;
     const isBuilding = isBuildingFeature(osm, params.cat, osm?.tags);
-    const isGeneric = !osm?.name || isGenericName(osm.name);
+    const streetName = isBuilding ? extractStreetName(osm, address) : null;
+    const isGeneric = !osm?.name || isGenericName(osm.name) ||
+      Boolean(isBuilding && streetName && osm.name.trim().toLowerCase() === streetName.trim().toLowerCase());
     const name = (!isGeneric && osm?.name) || params.name || (isBuilding ? address : 'Map Object');
     const category = osm?.category || params.cat || (isBuilding ? 'building' : 'place');
     const em = params.em || (osm ? inferOsmEmoji(osm.category, osm.type) : (isBuilding ? '🏢' : '📍'));
-
-    // Extract street name if this is a building
-    const streetName = isBuilding ? extractStreetName(osm, address) : null;
 
     // Update sheet header immediately with resolved address and title
     if (isGeneric && address) {
@@ -259,17 +258,20 @@ async function handleFetchEnrichedPlace(params: {
     const [wikidata, wikiResult, googlePlacesResult, streetInfo] = await Promise.all([
       fetchWikidataDetails({
         qid,
-        lat: params.lat,
-        lon: params.lon,
-        name,
+        lat: isGeneric ? undefined : params.lat,
+        lon: isGeneric ? undefined : params.lon,
+        name: isGeneric ? undefined : name,
+        isBuilding,
       }).catch(err => {
         console.warn('Wikidata Query Service warning:', err);
         return null;
       }),
-      fetchWikiDescription(name).catch(err => {
-        console.warn('Wikipedia narrative warning:', err);
-        return null;
-      }),
+      (!isGeneric && name && name !== 'Map Object')
+        ? fetchWikiDescription(name).catch(err => {
+            console.warn('Wikipedia narrative warning:', err);
+            return null;
+          })
+        : Promise.resolve(null),
       fetchGooglePlacesAtAddress(placesQuery, params.lat, params.lon).catch(err => {
         console.warn('Google Places warning:', err);
         return { primary: null, places: [] };
@@ -294,8 +296,16 @@ async function handleFetchEnrichedPlace(params: {
 
     // Build interactive highlight terms
     const terms = wikiResult?.terms ?? [name];
-    const rawDesc = wikiResult?.description || wikidata?.description || osm?.tags['description'] || '';
-    const descriptionHtml = rawDesc ? highlightTerms(rawDesc, terms) : undefined;
+    const rawDesc = wikiResult?.description ||
+      (!isGeneric ? wikidata?.description : undefined) ||
+      osm?.tags['description'] ||
+      '';
+    const isRedundantDesc = Boolean(
+      rawDesc && address && isGeneric &&
+      (rawDesc.trim().toLowerCase() === address.trim().toLowerCase() ||
+       rawDesc.toLowerCase().includes(address.toLowerCase()))
+    );
+    const descriptionHtml = (rawDesc && !isRedundantDesc) ? highlightTerms(rawDesc, terms) : undefined;
     const thumbnail = wikiResult?.thumbnail;
 
     const info: EnrichedPlaceInfo = {

@@ -7,80 +7,35 @@ import { haversineKm } from './overpass';
 export function inferCategory(title: string, desc = ''): { cat: string; subcat: string } {
   const text = `${title} ${desc}`.toLowerCase();
 
-  if (
-    text.includes('church') ||
-    text.includes('cathedral') ||
-    text.includes('basilica') ||
-    text.includes('abbey') ||
-    text.includes('chapel')
-  ) {
+  if (/\b(church|cathedral|basilica|abbey|chapel)\b/.test(text)) {
     return { cat: 'historic', subcat: 'church' };
   }
 
-  if (
-    text.includes('castle') ||
-    text.includes('palace') ||
-    text.includes('château') ||
-    text.includes('fortress') ||
-    text.includes('bastion')
-  ) {
+  if (/\b(castle|palace|château|fortress|bastion)\b/.test(text)) {
     return { cat: 'historic', subcat: 'castle' };
   }
 
-  if (
-    text.includes('monument') ||
-    text.includes('memorial') ||
-    text.includes('statue') ||
-    text.includes('pantheon') ||
-    text.includes('tomb') ||
-    text.includes('cemetery')
-  ) {
+  if (/\b(monument|memorial|statue|pantheon|tomb|cemetery)\b/.test(text)) {
     return { cat: 'historic', subcat: 'monument' };
   }
 
-  if (text.includes('museum') || text.includes('gallery') || text.includes('collection')) {
+  if (/\b(museum|gallery|collection)\b/.test(text)) {
     return { cat: 'tourism', subcat: 'museum' };
   }
 
-  if (
-    text.includes('park') ||
-    text.includes('garden') ||
-    text.includes('jardin') ||
-    text.includes('forest') ||
-    text.includes('promenade') ||
-    text.includes('square')
-  ) {
+  if (/\b(park|garden|jardin|forest|promenade|square)\b/.test(text)) {
     return { cat: 'leisure', subcat: 'park' };
   }
 
-  if (
-    text.includes('cafe') ||
-    text.includes('café') ||
-    text.includes('restaurant') ||
-    text.includes('bistro') ||
-    text.includes('brasserie') ||
-    text.includes('bakery')
-  ) {
+  if (/\b(cafe|café|coffee|restaurant|bistro|brasserie|bakery)\b/.test(text)) {
     return { cat: 'amenity', subcat: 'restaurant' };
   }
 
-  if (
-    text.includes('market') ||
-    text.includes('mall') ||
-    text.includes('bazaar') ||
-    text.includes('shop') ||
-    text.includes('boutique')
-  ) {
+  if (/\b(market|mall|bazaar|shop|shops|boutique|store|stores)\b/.test(text)) {
     return { cat: 'shop', subcat: 'shop' };
   }
 
-  if (
-    text.includes('tower') ||
-    text.includes('bridge') ||
-    text.includes('pont') ||
-    text.includes('viewpoint') ||
-    text.includes('arch')
-  ) {
+  if (/\b(tower|bridge|pont|viewpoint|arch)\b/.test(text)) {
     return { cat: 'tourism', subcat: 'viewpoint' };
   }
 

@@ -313,23 +313,63 @@ export function resolvePlacesAtAddress(options: {
   const result: AddressPlaceOrganization[] = [];
   const seenNames = new Set<string>();
 
+  const normAddress = options.address ? options.address.trim().toLowerCase() : '';
+  const road = options.osm?.address?.road?.trim().toLowerCase() || '';
+  const houseNum = options.osm?.address?.houseNumber?.trim().toLowerCase() || '';
+
+  const isSelfBuildingAddress = (name: string, category?: string | undefined): boolean => {
+    const norm = name.trim().toLowerCase();
+    if (!norm) return true;
+    if (normAddress && (norm === normAddress || normAddress.startsWith(norm) || norm.startsWith(normAddress))) {
+      return true;
+    }
+    if (road && houseNum) {
+      const roadHouse = `${road} ${houseNum}`;
+      const houseRoad = `${houseNum} ${road}`;
+      if (norm === roadHouse || norm === houseRoad || norm.includes(roadHouse) || norm.includes(houseRoad)) {
+        return true;
+      }
+    }
+    if (category && /^(building|house|residential|place)$/i.test(category.trim())) {
+      if (road && norm.includes(road)) return true;
+      if (houseNum && norm.includes(houseNum)) return true;
+    }
+    return false;
+  };
+
   const addIfUnique = (p: AddressPlaceOrganization) => {
     const key = p.name.trim().toLowerCase();
     if (!key || seenNames.has(key)) return;
+    if (isSelfBuildingAddress(p.name, p.category)) return;
     seenNames.add(key);
     result.push(p);
   };
+
+  // 0. Places from OSM address inventory (all organizations at this address)
+  for (const org of options.osm?.addressOrganizations || []) {
+    addIfUnique(org);
+  }
 
   // 1. Places from Google Places
   for (const gp of options.googlePlaces || []) {
     addIfUnique(gp);
   }
 
-  // 2. Places from in-memory store POIs if within 40m (0.04 km)
+  // 2. Places from in-memory store POIs if within 40m (0.04 km) and has physical organization tag
   if (options.storePois && options.lat != null && options.lon != null) {
     for (const poi of options.storePois) {
       const name = poi.tags.name ?? poi.tags['name:en'];
       if (!name) continue;
+
+      const isPhysicalOrg = Boolean(
+        poi.tags.shop ||
+        poi.tags.amenity ||
+        poi.tags.office ||
+        poi.tags.craft ||
+        poi.tags.operator
+      );
+      if (!isPhysicalOrg) continue;
+
       if (poi._dist != null && poi._dist <= 0.04) {
         addIfUnique({
           name,
@@ -344,7 +384,7 @@ export function resolvePlacesAtAddress(options: {
   // 3. OSM tags (operator, brand)
   if (options.osm) {
     const brand = options.osm.tags['brand'] || options.osm.tags['operator'];
-    if (brand) {
+    if (brand && !isSelfBuildingAddress(brand)) {
       addIfUnique({
         name: brand,
         category: options.osm.category || 'Organization',

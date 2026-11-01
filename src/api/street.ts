@@ -334,7 +334,7 @@ export async function fetchStreetInfo(
       const info: StreetInfo = {
         name: streetName,
         title: wdMatch.label,
-        subtitle: `🛣️ ${wdMatch.description}`,
+        subtitle: city ? `🛣️ Street in ${city}` : '🛣️ Street Guide',
         descriptionHtml: `<p>${wdMatch.description}</p>`,
         rawDescription: wdMatch.description,
         wikidataId: wdMatch.qid,

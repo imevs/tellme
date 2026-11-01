@@ -144,6 +144,51 @@ describe('Google Places API integration (src/api/googlePlaces.ts)', () => {
       expect(result).toHaveLength(3);
       expect(result.map(r => r.name)).toEqual(['Boutique Alpha', 'Café Parisien', 'Immobilier Rivoli']);
     });
+
+    it('filters out self-building address items from organizations list', () => {
+      const result = resolvePlacesAtAddress({
+        address: '45 Miera iela, Brasa, Riga, Latvia',
+        lat: 56.9666,
+        lon: 24.13321,
+        osm: {
+          osmId: 101,
+          osmType: 'way',
+          name: '',
+          category: 'place',
+          type: 'house',
+          displayName: '45, Miera iela, Centrs, Riga, LV-1013, Latvia',
+          address: {
+            road: 'Miera iela',
+            houseNumber: '45',
+          },
+          tags: {},
+          lat: 56.9666,
+          lon: 24.13321,
+        },
+        storePois: [
+          {
+            id: 201,
+            type: 'way',
+            tags: { name: 'Miera iela 45', building: 'yes', 'addr:housenumber': '45' },
+            _lat: 56.9666,
+            _lon: 24.13321,
+            _dist: 0.005,
+          },
+          {
+            id: 202,
+            type: 'node',
+            tags: { name: 'Miera Bakery', shop: 'bakery' },
+            _lat: 56.96661,
+            _lon: 24.13322,
+            _dist: 0.01,
+          },
+        ],
+      });
+
+      // Miera iela 45 must be filtered out; Miera Bakery must remain
+      expect(result).toHaveLength(1);
+      expect(result[0]?.name).toBe('Miera Bakery');
+    });
   });
 
   describe('Daily Quota and Rate Limiting', () => {

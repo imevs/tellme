@@ -56,7 +56,6 @@ export function openSheet(title: string, subtitle: string, address?: string): vo
 
   showEl(IDS.SHEET_LOADING);
   hideEl(IDS.SHEET_DESC);
-  hideEl(IDS.EXPLORE_HINT);
 
   updateBack();
   updateBreadcrumb();
@@ -91,11 +90,6 @@ export function renderDesc(description: string, terms: string[], image?: string)
   const descEl = $(IDS.SHEET_DESC);
   descEl.innerHTML = html;
   showEl(IDS.SHEET_DESC);
-
-  const hasTerms = descEl.querySelectorAll(`.${CSS.TERM}`).length > 0;
-  if (hasTerms) showEl(IDS.EXPLORE_HINT);
-  else hideEl(IDS.EXPLORE_HINT);
-
   wireTerms();
 }
 
@@ -103,7 +97,8 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
   hideEl(IDS.SHEET_LOADING);
 
   const displayAddress = info.address || info.googlePlace?.formattedAddress;
-  const isGeneric = isGenericName(info.name);
+  const isGeneric = isGenericName(info.name) ||
+    Boolean(info.isBuilding && info.streetName && info.name.trim().toLowerCase() === info.streetName.trim().toLowerCase());
 
   // If the object has no distinct name, address is shown as title.
   // If object has a specific name, show name in title and address directly below it in title column.
@@ -275,18 +270,6 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     `);
   }
 
-  if (displayAddress) {
-    cards.push(`
-      <div class="fact-card fact-card-wide">
-        <div class="fact-icon">📍</div>
-        <div class="fact-body">
-          <div class="fact-label">Location / Address</div>
-          <div class="fact-val">${esc(displayAddress)}</div>
-        </div>
-      </div>
-    `);
-  }
-
   if (cards.length > 0) {
     sections.push(`<div class="facts-grid">${cards.join('')}</div>`);
   }
@@ -351,7 +334,6 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     sections.push(`
       <div class="sheet-organizations-block">
         <div class="organizations-block-header">
-          <span class="organizations-block-badge">🏢 Directory</span>
           <h3 class="organizations-block-title">Places & Organizations at this Address</h3>
           <div class="organizations-block-sub">${orgs.length} ${orgs.length === 1 ? 'place' : 'places'} located here</div>
         </div>
@@ -367,12 +349,17 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     const street = info.streetInfo;
     const streetBlocks: string[] = [];
 
+    const cleanSub = street.subtitle ? street.subtitle.replace(/^🛣️\s*/, '').trim().toLowerCase() : '';
+    const cleanDesc = street.rawDescription ? street.rawDescription.trim().toLowerCase() : '';
+    const isSubDuplicate = cleanSub && cleanDesc && (cleanSub === cleanDesc || cleanDesc.startsWith(cleanSub));
+    const showSubtitle = street.subtitle && !isSubDuplicate;
+
     streetBlocks.push(`
       <div class="sheet-street-block">
         <div class="street-block-header">
           <span class="street-block-badge">🛣️ Street Guide</span>
           <h3 class="street-block-title">${esc(street.name)}</h3>
-          ${street.subtitle ? `<div class="street-block-sub">${esc(street.subtitle)}</div>` : ''}
+          ${showSubtitle ? `<div class="street-block-sub">${esc(street.subtitle!)}</div>` : ''}
         </div>
     `);
 
@@ -410,16 +397,11 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
   descEl.innerHTML = sections.join('');
   showEl(IDS.SHEET_DESC);
 
-  const hasTerms = descEl.querySelectorAll(`.${CSS.TERM}`).length > 0;
-  if (hasTerms) showEl(IDS.EXPLORE_HINT);
-  else hideEl(IDS.EXPLORE_HINT);
-
   wireTerms();
 }
 
 export function renderError(message: string): void {
   hideEl(IDS.SHEET_LOADING);
-  hideEl(IDS.EXPLORE_HINT);
   const descEl = $(IDS.SHEET_DESC);
   descEl.innerHTML =
     `<div class="sheet-error">⚠️ ${esc(message)}<br>` +
@@ -512,10 +494,6 @@ export function goBack(): void {
   descEl.innerHTML = prev.html;
   showEl(IDS.SHEET_DESC);
   hideEl(IDS.SHEET_LOADING);
-
-  const hasTerms = descEl.querySelectorAll(`.${CSS.TERM}`).length > 0;
-  if (hasTerms) showEl(IDS.EXPLORE_HINT);
-  else hideEl(IDS.EXPLORE_HINT);
 
   wireTerms();
   updateBack();

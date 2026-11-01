@@ -1,5 +1,5 @@
-import { NOMINATIM_ENDPOINT, PHOTON_REVERSE_ENDPOINT } from '../constants';
-import type { OsmFeature } from '../types';
+import { NOMINATIM_ENDPOINT, NOMINATIM_SEARCH_ENDPOINT, PHOTON_REVERSE_ENDPOINT } from '../constants';
+import type { OsmFeature, AddressPlaceOrganization } from '../types';
 
 let osmController: AbortController | null = null;
 
@@ -42,8 +42,8 @@ export function parseNominatimResponse(
     addrObj['amenity'] ??
     addrObj['leisure'] ??
     addrObj['building'] ??
-    addrObj['road'] ??
-    (typeof data['display_name'] === 'string' ? data['display_name'].split(',')[0]?.trim() : '') ??
+    (addrObj['house_number'] || data['type'] === 'house' || data['category'] === 'building' ? null : addrObj['road']) ??
+    (typeof data['display_name'] === 'string' && !addrObj['house_number'] ? data['display_name'].split(',')[0]?.trim() : '') ??
     'Map Object';
 
   const category = String(data['category'] || (extratags['building'] ? 'building' : 'place'));
@@ -190,6 +190,104 @@ export function inferOsmEmoji(category: string, type: string): string {
   return '📍';
 }
 
+// ── Address Inventory & Canonical Entity Resolution ────────
+const addressInventoryCache = new Map<string, { primary?: OsmFeature | undefined; orgs: AddressPlaceOrganization[] }>();
+
+export async function fetchAddressInventory(
+  road: string,
+  houseNumber: string,
+  city?: string | undefined,
+  signal?: AbortSignal | undefined,
+): Promise<{ primary?: OsmFeature | undefined; orgs: AddressPlaceOrganization[] }> {
+  const normRoad = road.trim().toLowerCase();
+  const normHouse = houseNumber.trim().toLowerCase();
+  const normCity = (city || '').trim().toLowerCase();
+  const cacheKey = `${normRoad}_${normHouse}_${normCity}`;
+
+  if (addressInventoryCache.has(cacheKey)) {
+    return addressInventoryCache.get(cacheKey)!;
+  }
+
+  try {
+    const streetQuery = `${houseNumber.trim()} ${road.trim()}`;
+    const params = new URLSearchParams({
+      street: streetQuery,
+      format: 'jsonv2',
+      addressdetails: '1',
+      extratags: '1',
+      namedetails: '1',
+      limit: '25',
+    });
+    if (city && city.trim()) {
+      params.set('city', city.trim());
+    }
+
+    const url = `${NOMINATIM_SEARCH_ENDPOINT}?${params.toString()}`;
+    const res = await fetch(url, signal ? { signal } : {});
+    if (!res.ok) {
+      return { primary: undefined, orgs: [] };
+    }
+
+    const items = (await res.json()) as Array<Record<string, unknown>>;
+    if (!Array.isArray(items) || items.length === 0) {
+      return { primary: undefined, orgs: [] };
+    }
+
+    // 1. Identify primary building / complex
+    const parsedItems = items.map(it => parseNominatimResponse(it, 0, 0)).filter((it): it is OsmFeature => it !== null);
+
+    let primary: OsmFeature | undefined = parsedItems.find(it =>
+      it.osmType === 'way' && Boolean(it.name) &&
+      (it.type === 'mall' || it.type === 'department_store' || it.category === 'shop' || it.category === 'building')
+    );
+
+    if (!primary) {
+      primary = parsedItems.find(it =>
+        it.osmType === 'way' && (it.category === 'building' || it.type === 'building' || it.type === 'mall')
+      );
+    }
+
+    if (!primary) {
+      primary = parsedItems.find(it =>
+        it.category === 'place' && (it.type === 'house' || it.type === 'building')
+      );
+    }
+
+    // 2. Extract organizations located at this address
+    const orgs: AddressPlaceOrganization[] = [];
+    const seenOrgNames = new Set<string>();
+
+    for (const item of parsedItems) {
+      if (primary && item.osmType === primary.osmType && item.osmId === primary.osmId) continue;
+      if (!item.name || !item.name.trim()) continue;
+
+      const normName = item.name.trim().toLowerCase();
+      if (normName === `${normHouse} ${normRoad}` || normName === `${normRoad} ${normHouse}`) continue;
+      if (seenOrgNames.has(normName)) continue;
+
+      const isOrgCategory = /^(shop|amenity|office|craft)$/i.test(item.category) ||
+        /^(supermarket|mall|pharmacy|atm|bank|restaurant|cafe|bakery|butcher|clothes|parcel_locker|clinic|dentist|doctors|lawyer|copyshop|optician|hairdresser|beauty|kiosk)$/i.test(item.type) ||
+        Boolean(item.tags['operator']);
+
+      if (isOrgCategory) {
+        seenOrgNames.add(normName);
+        orgs.push({
+          name: item.name,
+          category: item.type ? item.type.replace(/_/g, ' ') : item.category,
+          formattedAddress: formatOsmAddress(item),
+          source: 'osm',
+        });
+      }
+    }
+
+    const result = { primary, orgs };
+    addressInventoryCache.set(cacheKey, result);
+    return result;
+  } catch {
+    return { primary: undefined, orgs: [] };
+  }
+}
+
 // ── Network fetcher ────────────────────────────────────────
 
 export async function fetchOsmObjectAt(
@@ -224,7 +322,46 @@ export async function fetchOsmObjectAt(
     if (res.ok) {
       const data: unknown = await res.json();
       const parsed = parseNominatimResponse(data, lat, lon);
-      if (parsed) return parsed;
+      if (parsed) {
+        // If feature belongs to an address with road & house number, query address inventory
+        // to canonicalize the building object and list all organizations at this address
+        if (parsed.address.road && parsed.address.houseNumber) {
+          const inv = await fetchAddressInventory(
+            parsed.address.road,
+            parsed.address.houseNumber,
+            parsed.address.city,
+            signal,
+          ).catch(() => ({ primary: undefined, orgs: [] }));
+
+          let finalFeature = parsed;
+          if (inv.primary && (parsed.osmType === 'node' || !parsed.name || parsed.name !== inv.primary.name)) {
+            finalFeature = {
+              ...inv.primary,
+              lat: parsed.lat,
+              lon: parsed.lon,
+            };
+          }
+
+          const allOrgs = [...inv.orgs];
+          if (parsed.name && parsed.name !== finalFeature.name) {
+            const isSubOrg = /^(shop|amenity|office|craft)$/i.test(parsed.category) ||
+              /^(supermarket|pharmacy|atm|bank|restaurant|cafe|bakery|butcher|clothes|parcel_locker)$/i.test(parsed.type);
+            if (isSubOrg && !allOrgs.some(o => o.name.toLowerCase() === parsed.name.toLowerCase())) {
+              allOrgs.unshift({
+                name: parsed.name,
+                category: parsed.type ? parsed.type.replace(/_/g, ' ') : parsed.category,
+                formattedAddress: formatOsmAddress(parsed),
+                source: 'osm',
+              });
+            }
+          }
+
+          finalFeature.addressOrganizations = allOrgs;
+          return finalFeature;
+        }
+
+        return parsed;
+      }
     }
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;

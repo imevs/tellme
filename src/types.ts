@@ -55,6 +55,7 @@ export interface OsmFeature {
   startDate?: string | undefined;
   lat: number;
   lon: number;
+  addressOrganizations?: AddressPlaceOrganization[] | undefined;
 }
 
 // ── Wikidata Facts ─────────────────────────────────────

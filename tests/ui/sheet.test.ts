@@ -118,43 +118,30 @@ describe('Sheet UI (src/ui/sheet.ts)', () => {
     expect(html).toContain('https://example.com/eiffel.jpg');
   });
 
-  it('hides explore-hint if there are no blue terms in the popup', () => {
-    const hintEl = document.getElementById(IDS.EXPLORE_HINT);
-
-    // 1. Plain text with NO blue words/terms
-    renderDesc('Plain description with no terms at all.', []);
-    expect(hintEl?.hasAttribute('hidden')).toBe(true);
-
-    // 2. renderEnrichedPlace with NO terms
-    const infoNoTerms: EnrichedPlaceInfo = {
-      name: 'Place without terms',
-      subtitle: 'Spot',
-      category: 'place',
-      emoji: '📍',
+  it('renders placesAtAddress without the Directory badge', () => {
+    const infoWithPlaces: EnrichedPlaceInfo = {
+      name: 'Sample Complex',
+      subtitle: 'Building',
+      category: 'building',
+      emoji: '🏢',
       lat: 0,
       lon: 0,
-      descriptionHtml: 'Just plain text without any term span tags.',
       terms: [],
+      placesAtAddress: [
+        {
+          name: 'Acme Cafe',
+          category: 'Cafe',
+          source: 'osm',
+        },
+      ],
     };
-    renderEnrichedPlace(infoNoTerms);
-    expect(hintEl?.hasAttribute('hidden')).toBe(true);
 
-    // 3. renderError also hides hint
-    renderError('Some error occurred');
-    expect(hintEl?.hasAttribute('hidden')).toBe(true);
-  });
-
-  it('shows explore-hint when there are blue terms in the popup', () => {
-    const hintEl = document.getElementById(IDS.EXPLORE_HINT);
-
-    renderDesc('Here is Paris with an Eiffel Tower.', ['Paris', 'Eiffel Tower']);
-    expect(hintEl?.hasAttribute('hidden')).toBe(false);
-  });
-
-  it('keeps explore-hint hidden during initial openSheet loading', () => {
-    const hintEl = document.getElementById(IDS.EXPLORE_HINT);
-    openSheet('Loading Place', 'Inspecting…');
-    expect(hintEl?.hasAttribute('hidden')).toBe(true);
+    renderEnrichedPlace(infoWithPlaces);
+    const html = document.getElementById(IDS.SHEET_DESC)?.innerHTML ?? '';
+    expect(html).toContain('Places &amp; Organizations at this Address');
+    expect(html).toContain('Acme Cafe');
+    expect(html).not.toContain('organizations-block-badge');
+    expect(html).not.toContain('Directory');
   });
 
   it('closes sheet and resets activeIdx to -1', () => {

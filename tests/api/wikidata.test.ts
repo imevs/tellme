@@ -146,5 +146,51 @@ describe('Wikidata Query Service Integration (src/api/wikidata.ts)', () => {
       expect(parseWikidataSparqlResponse(null)).toBeNull();
       expect(parseWikidataSparqlResponse({})).toBeNull();
     });
+
+    it('filters out streets and roads when isBuilding is true', () => {
+      const mockStreetOnly = {
+        results: {
+          bindings: [
+            {
+              item: { value: 'http://www.wikidata.org/entity/Q20577400' },
+              itemLabel: { value: 'Miera Street' },
+              itemDescription: { value: 'street in Riga, Latvia' },
+              instanceOfLabel: { value: 'street' },
+            },
+          ],
+        },
+      };
+
+      // Disqualified when looking for a building
+      expect(parseWikidataSparqlResponse(mockStreetOnly, { isBuilding: true })).toBeNull();
+
+      // Accepted when not looking for a building
+      const streetResult = parseWikidataSparqlResponse(mockStreetOnly);
+      expect(streetResult).not.toBeNull();
+      expect(streetResult?.label).toBe('Miera Street');
+    });
+
+    it('returns null when all candidates in spatial search are macro or disqualified entities', () => {
+      const mockMacroEntities = {
+        results: {
+          bindings: [
+            {
+              item: { value: 'http://www.wikidata.org/entity/Q739032' },
+              itemLabel: { value: 'Swedish Livonia' },
+              itemDescription: { value: 'dominion in the Baltic region' },
+              instanceOfLabel: { value: 'dominion of Sweden' },
+            },
+            {
+              item: { value: 'http://www.wikidata.org/entity/Q15471939' },
+              itemLabel: { value: 'Archbishopric of Riga' },
+              itemDescription: { value: 'medieval archdiocese' },
+              instanceOfLabel: { value: 'Prince-Archbishopric' },
+            },
+          ],
+        },
+      };
+
+      expect(parseWikidataSparqlResponse(mockMacroEntities)).toBeNull();
+    });
   });
 });

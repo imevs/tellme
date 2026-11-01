@@ -132,7 +132,10 @@ interface SparqlBinding {
   wikipediaArticle?: { value: string };
 }
 
-export function parseWikidataSparqlResponse(raw: unknown): WikidataFactDetails | null {
+export function parseWikidataSparqlResponse(
+  raw: unknown,
+  options?: { isBuilding?: boolean | undefined },
+): WikidataFactDetails | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const root = raw as Record<string, unknown>;
 
@@ -140,7 +143,39 @@ export function parseWikidataSparqlResponse(raw: unknown): WikidataFactDetails |
   const bindings = results?.bindings;
   if (!Array.isArray(bindings) || bindings.length === 0) return null;
 
-  const first = bindings[0]!;
+  // Group bindings by item URI
+  const itemMap = new Map<string, SparqlBinding[]>();
+  for (const b of bindings) {
+    const itemUri = b.item?.value;
+    if (!itemUri) continue;
+    if (!itemMap.has(itemUri)) itemMap.set(itemUri, []);
+    itemMap.get(itemUri)!.push(b);
+  }
+
+  // Filter out macro-territorial entities (countries, historical dominions, administrative regions)
+  // and if isBuilding is true, filter out streets/roads/thoroughfares
+  const nonPhysicalPattern = options?.isBuilding
+    ? /\b(dominion|empire|country|state|administrative|territorial|territory|diocese|province|archbishopric|region|street|road|thoroughfare|avenue|highway|boulevard)\b/i
+    : /\b(dominion|empire|country|state|administrative|territorial|territory|diocese|province|archbishopric|region)\b/i;
+
+  let targetBindings: SparqlBinding[] | undefined;
+
+  for (const [, itemBindings] of itemMap) {
+    const isDisqualified = itemBindings.some(b => {
+      const inst = b.instanceOfLabel?.value || '';
+      return nonPhysicalPattern.test(inst);
+    });
+    if (!isDisqualified) {
+      targetBindings = itemBindings;
+      break;
+    }
+  }
+
+  if (!targetBindings || targetBindings.length === 0) {
+    return null;
+  }
+
+  const first = targetBindings[0]!;
   const qidUrl = first.item?.value ?? '';
   const qidMatch = qidUrl.match(/Q\d+$/);
   const qid = qidMatch ? qidMatch[0] : (qidUrl || 'Wikidata');
@@ -160,7 +195,7 @@ export function parseWikidataSparqlResponse(raw: unknown): WikidataFactDetails |
   const instancesSet  = new Set<string>();
   const materialsSet  = new Set<string>();
 
-  for (const b of bindings) {
+  for (const b of targetBindings) {
     if (!rawInception && b.inception?.value) rawInception = b.inception.value;
     if (!rawOpening && b.openingDate?.value) rawOpening = b.openingDate.value;
     if (!rawHeight && b.height?.value) rawHeight = b.height.value;
@@ -258,6 +293,7 @@ export async function fetchWikidataDetails(options: {
   lat?: number | undefined;
   lon?: number | undefined;
   name?: string | undefined;
+  isBuilding?: boolean | undefined;
 }): Promise<WikidataFactDetails | null> {
   wikidataController?.abort();
   wikidataController = new AbortController();
@@ -299,7 +335,7 @@ export async function fetchWikidataDetails(options: {
       });
       if (res.ok) {
         const json: unknown = await res.json();
-        const details = parseWikidataSparqlResponse(json);
+        const details = parseWikidataSparqlResponse(json, { isBuilding: options.isBuilding });
         if (details) return details;
       }
     } catch (err) {
@@ -340,7 +376,7 @@ export async function fetchWikidataDetails(options: {
       });
       if (res.ok) {
         const json: unknown = await res.json();
-        const details = parseWikidataSparqlResponse(json);
+        const details = parseWikidataSparqlResponse(json, { isBuilding: options.isBuilding });
         if (details && (details.inceptionDate || details.height || details.architects.length > 0 || details.label)) {
           return details;
         }

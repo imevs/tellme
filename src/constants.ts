@@ -6,6 +6,7 @@ export const STORAGE_KEY_API = 'tm_key';
 // ── Network endpoints ──────────────────────────────────
 export const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
 export const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
+export const NOMINATIM_SEARCH_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 export const PHOTON_REVERSE_ENDPOINT = 'https://photon.komoot.io/reverse';
 export const WIKIDATA_SPARQL_ENDPOINT = 'https://query.wikidata.org/sparql';
 export const WIKIDATA_API_ENDPOINT = 'https://www.wikidata.org/w/api.php';
