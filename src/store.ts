@@ -1,8 +1,6 @@
 import type { AppState, StateListener } from './types';
-import { STORAGE_KEY_API } from './constants';
-
+ 
 const INITIAL_STATE: AppState = {
-  apiKey:       localStorage.getItem(STORAGE_KEY_API) ?? '',
   map:          null,
   userMarker:   null,
   clickedMarker:null,
@@ -11,7 +9,6 @@ const INITIAL_STATE: AppState = {
   activeCat:    'all',
   activeIdx:    -1,
   history:      [],
-  pendingFetch: null,
 };
 
 class Store {

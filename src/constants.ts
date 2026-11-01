@@ -13,8 +13,6 @@ export const WIKIPEDIA_API_ENDPOINT = 'https://en.wikipedia.org/w/api.php';
 export const GOOGLE_PLACES_API_KEY = 'AIzaSyDy9nLQ54j6eWrI4nlOSwi5SGn81gRbOtI';
 export const GOOGLE_PLACES_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
 export const GOOGLE_PLACES_MAX_DAILY_CALLS = 40;
-export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-export const GEMINI_MODEL    = 'gemini-3.8-flash';
 
 // ── Map defaults ───────────────────────────────────────
 export const DEFAULT_CENTER: [number, number] = [48.8566, 2.3522]; // Paris
@@ -35,11 +33,6 @@ export const TOAST_DURATION_MS = 2800;
 export const SWIPE_CLOSE_PX = 90;
 export const FLY_DURATION_S = 0.9;
 
-// ── Gemini generation config ───────────────────────────
-export const GEMINI_MAX_TOKENS          = 600;
-export const GEMINI_DISCOVER_MAX_TOKENS = 1600;
-export const GEMINI_RESPONSE_MIME       = 'application/json';
-
 // ── Element IDs ────────────────────────────────────────
 export const IDS = {
   MAP: 'map',
@@ -56,6 +49,7 @@ export const IDS = {
   SHEET_CLOSE: 'sheet-close',
   SHEET_TITLE: 'sheet-title',
   SHEET_SUBTITLE: 'sheet-subtitle',
+  SHEET_ADDRESS: 'sheet-address',
   SHEET_BODY: 'sheet-body',
   SHEET_LOADING: 'sheet-loading',
   SHEET_DESC: 'sheet-desc',

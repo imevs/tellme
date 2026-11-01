@@ -1,7 +1,7 @@
 {
   "name": "tellme",
   "version": "1.0.0",
-  "description": "Tap-to-explore travel app powered by OpenStreetMap and Gemini AI",
+  "description": "Tap-to-explore travel app powered by OpenStreetMap, Wikidata, Wikipedia, and Google Places",
   "private": true,
   "type": "module",
   "scripts": {

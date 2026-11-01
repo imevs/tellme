@@ -33,29 +33,6 @@ export interface POI extends OverpassElement {
   _dist:  number;
 }
 
-// ── Gemini API response ────────────────────────────────
-export interface GeminiResponse {
-  description: string;
-  terms:       string[];
-}
-
-// ── Fetch description request params ──────────────────
-export type DescRequestType = 'place' | 'term';
-
-export interface PlaceDescRequest {
-  type: 'place';
-  name: string;
-  addr: string;
-  cat:  string;
-}
-
-export interface TermDescRequest {
-  type: 'term';
-  term: string;
-}
-
-export type DescRequest = PlaceDescRequest | TermDescRequest;
-
 // ── OpenStreetMap Feature ──────────────────────────────
 export interface OsmFeature {
   osmId: number;
@@ -109,6 +86,35 @@ export interface GooglePlaceDetails {
   editorialSummary?: string | undefined;
 }
 
+// ── Street Info (About the street a building is on) ───
+export interface StreetInfo {
+  name: string;
+  title?: string | undefined;
+  subtitle?: string | undefined;
+  descriptionHtml?: string | undefined;
+  rawDescription?: string | undefined;
+  thumbnail?: string | undefined;
+  terms?: string[] | undefined;
+  namedAfter?: string[] | undefined;
+  inceptionDate?: string | undefined;
+  length?: string | undefined;
+  wikipediaUrl?: string | undefined;
+  wikidataId?: string | undefined;
+  source?: 'wikipedia' | 'wikidata' | 'osm' | undefined;
+}
+
+// ── Places / Organizations Located at Address ─────────
+export interface AddressPlaceOrganization {
+  id?: string | undefined;
+  name: string;
+  category?: string | undefined;
+  openNow?: boolean | undefined;
+  websiteUri?: string | undefined;
+  formattedAddress?: string | undefined;
+  description?: string | undefined;
+  source?: 'google' | 'osm' | 'wikipedia' | undefined;
+}
+
 // ── Enriched Place Info (OSM + Wikidata + Wikipedia + Google Places) ───
 export interface EnrichedPlaceInfo {
   name: string;
@@ -119,6 +125,10 @@ export interface EnrichedPlaceInfo {
   lon: number;
   distanceKm?: number | null | undefined;
   address?: string | undefined;
+  isBuilding?: boolean | undefined;
+  streetName?: string | undefined;
+  streetInfo?: StreetInfo | null | undefined;
+  placesAtAddress?: AddressPlaceOrganization[] | undefined;
   osm?: OsmFeature | null | undefined;
   wikidata?: WikidataFactDetails | null | undefined;
   googlePlace?: GooglePlaceDetails | null | undefined;
@@ -131,12 +141,12 @@ export interface EnrichedPlaceInfo {
 export interface HistoryEntry {
   title:    string;
   subtitle: string;
+  address?: string | undefined;
   html:     string;
 }
 
 // ── Application state ──────────────────────────────────
 export interface AppState {
-  readonly apiKey:        string;
   readonly map:           LeafletMap | null;
   readonly userMarker:    Marker | null;
   readonly clickedMarker: Marker | null;
@@ -145,7 +155,6 @@ export interface AppState {
   readonly activeCat:     string;
   readonly activeIdx:     number;       // -1 = none selected
   readonly history:       HistoryEntry[];
-  readonly pendingFetch:  DescRequest | null;
 }
 
 // ── Store listener ─────────────────────────────────────

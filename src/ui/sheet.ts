@@ -4,11 +4,54 @@ import { IDS, CSS } from '../constants';
 import { clearClickedMarker } from '../map/leaflet';
 import type { HistoryEntry, EnrichedPlaceInfo } from '../types';
 
+// ── Pure Helpers ───────────────────────────────────────
+
+export function isGenericName(name?: string | null): boolean {
+  if (!name || !name.trim()) return true;
+  const n = name.trim().toLowerCase();
+  const genericStrings = new Set([
+    'map object',
+    'building',
+    'house',
+    'residential',
+    'apartments',
+    'commercial',
+    'retail',
+    'office',
+    'industrial',
+    'warehouse',
+    'roof',
+    'yes',
+    'no',
+    'unnamed',
+    'this place',
+    'place',
+    'feature',
+    'inspecting object…',
+    'loading…',
+  ]);
+  if (genericStrings.has(n)) return true;
+  if (/^(node|way|relation)\/\d+$/i.test(n)) return true;
+  if (/^\d+[a-z]?$/i.test(n)) return true;
+  return false;
+}
+
 // ── Open / close ───────────────────────────────────────
 
-export function openSheet(title: string, subtitle: string): void {
+export function openSheet(title: string, subtitle: string, address?: string): void {
   $(IDS.SHEET_TITLE).textContent    = title;
   $(IDS.SHEET_SUBTITLE).textContent = subtitle;
+
+  const addrEl = $safe(IDS.SHEET_ADDRESS);
+  if (addrEl) {
+    if (address && address !== title) {
+      addrEl.textContent = `📍 ${address}`;
+      addrEl.removeAttribute('hidden');
+    } else {
+      addrEl.textContent = '';
+      addrEl.setAttribute('hidden', '');
+    }
+  }
 
   showEl(IDS.SHEET_LOADING);
   hideEl(IDS.SHEET_DESC);
@@ -57,7 +100,34 @@ export function renderDesc(description: string, terms: string[], image?: string)
 export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
   hideEl(IDS.SHEET_LOADING);
 
-  $(IDS.SHEET_TITLE).textContent    = info.name;
+  const displayAddress = info.address || info.googlePlace?.formattedAddress;
+  const isGeneric = isGenericName(info.name);
+
+  // If the object has no distinct name, address is shown as title.
+  // If object has a specific name, show name in title and address directly below it in title column.
+  if (isGeneric && displayAddress) {
+    $(IDS.SHEET_TITLE).textContent = displayAddress;
+    $(IDS.SHEET_TITLE).setAttribute('title', displayAddress);
+    const addrEl = $safe(IDS.SHEET_ADDRESS);
+    if (addrEl) {
+      addrEl.textContent = '';
+      addrEl.setAttribute('hidden', '');
+    }
+  } else {
+    $(IDS.SHEET_TITLE).textContent = info.name;
+    $(IDS.SHEET_TITLE).setAttribute('title', displayAddress ? `${info.name} — ${displayAddress}` : info.name);
+    const addrEl = $safe(IDS.SHEET_ADDRESS);
+    if (addrEl) {
+      if (displayAddress && displayAddress !== info.name) {
+        addrEl.textContent = `📍 ${displayAddress}`;
+        addrEl.removeAttribute('hidden');
+      } else {
+        addrEl.textContent = '';
+        addrEl.setAttribute('hidden', '');
+      }
+    }
+  }
+
   $(IDS.SHEET_SUBTITLE).textContent = info.subtitle;
 
   const sections: string[] = [];
@@ -203,7 +273,6 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     `);
   }
 
-  const displayAddress = info.address || info.googlePlace?.formattedAddress;
   if (displayAddress) {
     cards.push(`
       <div class="fact-card fact-card-wide">
@@ -242,6 +311,97 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
         <div class="sheet-narrative-text">${info.descriptionHtml}</div>
       </div>
     `);
+  }
+
+  // Places (Organizations) Located at this Address Section
+  if (info.placesAtAddress && info.placesAtAddress.length > 0) {
+    const orgs = info.placesAtAddress;
+    const itemsHtml = orgs.map(org => {
+      const statusBadge = org.openNow !== undefined
+        ? (org.openNow ? '<span class="org-status-open">● Open Now</span>' : '<span class="org-status-closed">● Closed</span>')
+        : '';
+      const websiteBtn = org.websiteUri
+        ? `<a href="${esc(org.websiteUri)}" target="_blank" rel="noopener" class="org-link-btn" title="Visit website"><span>🌐</span> Website ↗</a>`
+        : '';
+      const descHtml = org.description
+        ? `<div class="org-item-desc">${esc(org.description)}</div>`
+        : '';
+      const categoryBadge = org.category
+        ? `<span class="org-item-category">${esc(org.category)}</span>`
+        : '';
+
+      return `
+        <div class="organization-item">
+          <div class="org-item-top">
+            <div class="org-item-title-row">
+              <span class="org-icon">🏢</span>
+              <span class="org-item-name">${esc(org.name)}</span>
+            </div>
+            ${categoryBadge}
+          </div>
+          ${statusBadge ? `<div class="org-item-status-row">${statusBadge}</div>` : ''}
+          ${descHtml}
+          ${websiteBtn ? `<div class="org-item-actions">${websiteBtn}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    sections.push(`
+      <div class="sheet-organizations-block">
+        <div class="organizations-block-header">
+          <span class="organizations-block-badge">🏢 Directory</span>
+          <h3 class="organizations-block-title">Places & Organizations at this Address</h3>
+          <div class="organizations-block-sub">${orgs.length} ${orgs.length === 1 ? 'place' : 'places'} located here</div>
+        </div>
+        <div class="organizations-list">
+          ${itemsHtml}
+        </div>
+      </div>
+    `);
+  }
+
+  // Street Information Section (shown at bottom in a separate block when card is showing building info & street info exists)
+  if (info.streetInfo) {
+    const street = info.streetInfo;
+    const streetBlocks: string[] = [];
+
+    streetBlocks.push(`
+      <div class="sheet-street-block">
+        <div class="street-block-header">
+          <span class="street-block-badge">🛣️ Street Guide</span>
+          <h3 class="street-block-title">${esc(street.name)}</h3>
+          ${street.subtitle ? `<div class="street-block-sub">${esc(street.subtitle)}</div>` : ''}
+        </div>
+    `);
+
+    if (street.thumbnail) {
+      streetBlocks.push(`
+        <div class="street-hero-img-wrap">
+          <img class="street-hero-img" src="${esc(street.thumbnail)}" alt="${esc(street.name)}" />
+        </div>
+      `);
+    }
+
+    if (street.descriptionHtml) {
+      streetBlocks.push(`
+        <div class="street-desc-text">
+          ${street.descriptionHtml}
+        </div>
+      `);
+    }
+
+    if (street.wikipediaUrl) {
+      streetBlocks.push(`
+        <div class="street-action-row">
+          <a href="${esc(street.wikipediaUrl)}" target="_blank" rel="noopener" class="street-link-btn">
+            <span>📖</span> Explore ${esc(street.name)} on Wikipedia ↗
+          </a>
+        </div>
+      `);
+    }
+
+    streetBlocks.push(`</div>`);
+    sections.push(streetBlocks.join(''));
   }
 
   const descEl = $(IDS.SHEET_DESC);
@@ -290,10 +450,13 @@ export function wireTerms(): void {
 
 export function exploreTerm(term: string): void {
   const currentHtml = $safe(IDS.SHEET_DESC)?.innerHTML ?? '';
+  const addrEl = $safe(IDS.SHEET_ADDRESS);
+  const currentAddr = (addrEl && !addrEl.hasAttribute('hidden')) ? addrEl.textContent?.replace(/^📍\s*/, '') : undefined;
 
   const entry: HistoryEntry = {
     title:    $(IDS.SHEET_TITLE).textContent ?? '',
     subtitle: $(IDS.SHEET_SUBTITLE).textContent ?? '',
+    address:  currentAddr,
     html:     currentHtml,
   };
 
@@ -301,6 +464,10 @@ export function exploreTerm(term: string): void {
 
   $(IDS.SHEET_TITLE).textContent    = term;
   $(IDS.SHEET_SUBTITLE).textContent = '🔍 exploring concept';
+  if (addrEl) {
+    addrEl.textContent = '';
+    addrEl.setAttribute('hidden', '');
+  }
 
   updateBack();
   updateBreadcrumb();
@@ -327,6 +494,17 @@ export function goBack(): void {
 
   $(IDS.SHEET_TITLE).textContent    = prev.title;
   $(IDS.SHEET_SUBTITLE).textContent = prev.subtitle;
+
+  const addrEl = $safe(IDS.SHEET_ADDRESS);
+  if (addrEl) {
+    if (prev.address) {
+      addrEl.textContent = `📍 ${prev.address}`;
+      addrEl.removeAttribute('hidden');
+    } else {
+      addrEl.textContent = '';
+      addrEl.setAttribute('hidden', '');
+    }
+  }
 
   const descEl = $(IDS.SHEET_DESC);
   descEl.innerHTML = prev.html;

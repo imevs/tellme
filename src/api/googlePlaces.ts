@@ -3,10 +3,16 @@ import {
   GOOGLE_PLACES_SEARCH_URL,
   GOOGLE_PLACES_MAX_DAILY_CALLS,
 } from '../constants';
-import type { GooglePlaceDetails } from '../types';
+import { poiCategory, poiAddress } from './overpass';
+import type { GooglePlaceDetails, AddressPlaceOrganization, OsmFeature, POI } from '../types';
 
 // ── In-Memory Cache ─────────────────────────────────────────
-const memoryCache = new Map<string, { data: GooglePlaceDetails; expiresAt: number }>();
+interface CachedPlacesData {
+  primary: GooglePlaceDetails | null;
+  places: AddressPlaceOrganization[];
+}
+
+const memoryCache = new Map<string, { data: CachedPlacesData; expiresAt: number }>();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 let placesController: AbortController | null = null;
@@ -84,6 +90,67 @@ export function parseGooglePlaceResponse(raw: unknown): GooglePlaceDetails | nul
   };
 }
 
+export function parseGooglePlacesList(raw: unknown): AddressPlaceOrganization[] {
+  if (typeof raw !== 'object' || raw === null) return [];
+  const data = raw as Record<string, unknown>;
+
+  const places = Array.isArray(data['places']) ? (data['places'] as Array<Record<string, unknown>>) : [];
+  if (places.length === 0) return [];
+
+  const result: AddressPlaceOrganization[] = [];
+
+  for (const p of places) {
+    if (typeof p !== 'object' || p === null) continue;
+    const displayName = typeof p['displayName'] === 'object' && p['displayName'] !== null
+      ? String((p['displayName'] as Record<string, unknown>)['text'] || '')
+      : undefined;
+
+    if (!displayName || !displayName.trim()) continue;
+
+    const primaryTypeDisplayName = typeof p['primaryTypeDisplayName'] === 'object' && p['primaryTypeDisplayName'] !== null
+      ? String((p['primaryTypeDisplayName'] as Record<string, unknown>)['text'] || '')
+      : undefined;
+    const primaryType = typeof p['primaryType'] === 'string'
+      ? p['primaryType'].replace(/_/g, ' ')
+      : undefined;
+
+    const currentOpeningHours = typeof p['currentOpeningHours'] === 'object' && p['currentOpeningHours'] !== null
+      ? (p['currentOpeningHours'] as Record<string, unknown>)
+      : undefined;
+    const openNow = typeof currentOpeningHours?.['openNow'] === 'boolean' ? currentOpeningHours['openNow'] : undefined;
+
+    const websiteUri = typeof p['websiteUri'] === 'string' && p['websiteUri'].startsWith('http')
+      ? p['websiteUri']
+      : undefined;
+
+    const formattedAddress = typeof p['formattedAddress'] === 'string'
+      ? p['formattedAddress']
+      : undefined;
+
+    const editorialSummary = typeof p['editorialSummary'] === 'object' && p['editorialSummary'] !== null
+      ? String((p['editorialSummary'] as Record<string, unknown>)['text'] || '') || undefined
+      : undefined;
+
+    const org: AddressPlaceOrganization = {
+      name: displayName,
+      category: primaryTypeDisplayName || primaryType || 'Organization',
+      openNow,
+      websiteUri,
+      formattedAddress,
+      description: editorialSummary,
+      source: 'google',
+    };
+
+    if (typeof p['id'] === 'string') {
+      org.id = p['id'];
+    }
+
+    result.push(org);
+  }
+
+  return result;
+}
+
 // ── Cache Helpers ───────────────────────────────────────────
 
 function getCacheKey(name: string, lat?: number, lon?: number): string {
@@ -94,7 +161,7 @@ function getCacheKey(name: string, lat?: number, lon?: number): string {
   return normName;
 }
 
-function getFromCache(key: string): GooglePlaceDetails | null {
+function getFromCache(key: string): CachedPlacesData | null {
   // 1. Memory cache
   const mem = memoryCache.get(key);
   if (mem && mem.expiresAt > Date.now()) {
@@ -105,7 +172,7 @@ function getFromCache(key: string): GooglePlaceDetails | null {
   try {
     const raw = localStorage.getItem(`gp_cache_${key}`);
     if (raw) {
-      const parsed = JSON.parse(raw) as { data: GooglePlaceDetails; expiresAt: number };
+      const parsed = JSON.parse(raw) as { data: CachedPlacesData; expiresAt: number };
       if (parsed.expiresAt > Date.now()) {
         memoryCache.set(key, parsed);
         return parsed.data;
@@ -119,7 +186,7 @@ function getFromCache(key: string): GooglePlaceDetails | null {
   return null;
 }
 
-function saveToCache(key: string, data: GooglePlaceDetails): void {
+function saveToCache(key: string, data: CachedPlacesData): void {
   const expiresAt = Date.now() + CACHE_TTL_MS;
   memoryCache.set(key, { data, expiresAt });
   try {
@@ -129,20 +196,19 @@ function saveToCache(key: string, data: GooglePlaceDetails): void {
   }
 }
 
-// ── Main Network Fetcher ────────────────────────────────────
+// ── Main Network Fetchers ───────────────────────────────────
 
-export async function fetchGooglePlaceDetails(
-  name: string,
+export async function fetchGooglePlacesAtAddress(
+  query: string,
   lat?: number,
   lon?: number,
-): Promise<GooglePlaceDetails | null> {
-  const cleanName = name.trim();
-  // Filter generic or empty names to prevent wasting quota
-  if (!cleanName || cleanName.length < 3 || cleanName === 'Map Object') {
-    return null;
+): Promise<{ primary: GooglePlaceDetails | null; places: AddressPlaceOrganization[] }> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery || cleanQuery.length < 3 || cleanQuery === 'Map Object') {
+    return { primary: null, places: [] };
   }
 
-  const cacheKey = getCacheKey(cleanName, lat, lon);
+  const cacheKey = getCacheKey(cleanQuery, lat, lon);
 
   // 1. Check Cache first
   const cached = getFromCache(cacheKey);
@@ -150,10 +216,10 @@ export async function fetchGooglePlaceDetails(
     return cached;
   }
 
-  // 2. Strict Quota Check — don't hit API if quota exceeded
+  // 2. Strict Quota Check
   if (!canMakeGooglePlacesCall()) {
     console.warn(`[Google Places] Daily call quota reached (${GOOGLE_PLACES_MAX_DAILY_CALLS}). Using fallback.`);
-    return null;
+    return { primary: null, places: [] };
   }
 
   // 3. Perform API Call with minimal lean FieldMask
@@ -162,7 +228,8 @@ export async function fetchGooglePlaceDetails(
 
   try {
     const bodyPayload: Record<string, unknown> = {
-      textQuery: cleanName,
+      textQuery: cleanQuery,
+      maxResultCount: 8,
     };
 
     if (lat != null && lon != null && (lat !== 0 || lon !== 0)) {
@@ -172,7 +239,7 @@ export async function fetchGooglePlaceDetails(
             latitude: lat,
             longitude: lon,
           },
-          radius: 1000.0,
+          radius: 60.0,
         },
       };
     }
@@ -181,6 +248,8 @@ export async function fetchGooglePlaceDetails(
       'places.id',
       'places.displayName',
       'places.formattedAddress',
+      'places.primaryType',
+      'places.primaryTypeDisplayName',
       'places.currentOpeningHours.openNow',
       'places.websiteUri',
       'places.editorialSummary',
@@ -199,22 +268,90 @@ export async function fetchGooglePlaceDetails(
 
     if (!res.ok) {
       console.warn(`[Google Places] API error: ${res.status}`);
-      return null;
+      return { primary: null, places: [] };
     }
 
     // Increment quota counter on success
     incrementDailyCallCount();
 
     const data: unknown = await res.json();
-    const parsed = parseGooglePlaceResponse(data);
-    if (parsed) {
-      saveToCache(cacheKey, parsed);
-      return parsed;
-    }
+    const primary = parseGooglePlaceResponse(data);
+    const places = parseGooglePlacesList(data);
+
+    const result = { primary, places };
+    saveToCache(cacheKey, result);
+    return result;
   } catch (err) {
-    if ((err as Error).name === 'AbortError') return null;
+    if ((err as Error).name === 'AbortError') return { primary: null, places: [] };
     console.warn('[Google Places] Request error:', err);
   }
 
-  return null;
+  return { primary: null, places: [] };
+}
+
+export async function fetchGooglePlaceDetails(
+  name: string,
+  lat?: number,
+  lon?: number,
+): Promise<GooglePlaceDetails | null> {
+  const res = await fetchGooglePlacesAtAddress(name, lat, lon);
+  return res.primary;
+}
+
+/**
+ * Consolidates organizations/places at this address from Google Places,
+ * nearby memory POIs, and OSM feature tags without using Overpass.
+ */
+export function resolvePlacesAtAddress(options: {
+  address?: string | undefined;
+  lat?: number | undefined;
+  lon?: number | undefined;
+  osm?: OsmFeature | null | undefined;
+  googlePlaces?: AddressPlaceOrganization[] | undefined;
+  storePois?: POI[] | undefined;
+}): AddressPlaceOrganization[] {
+  const result: AddressPlaceOrganization[] = [];
+  const seenNames = new Set<string>();
+
+  const addIfUnique = (p: AddressPlaceOrganization) => {
+    const key = p.name.trim().toLowerCase();
+    if (!key || seenNames.has(key)) return;
+    seenNames.add(key);
+    result.push(p);
+  };
+
+  // 1. Places from Google Places
+  for (const gp of options.googlePlaces || []) {
+    addIfUnique(gp);
+  }
+
+  // 2. Places from in-memory store POIs if within 40m (0.04 km)
+  if (options.storePois && options.lat != null && options.lon != null) {
+    for (const poi of options.storePois) {
+      const name = poi.tags.name ?? poi.tags['name:en'];
+      if (!name) continue;
+      if (poi._dist != null && poi._dist <= 0.04) {
+        addIfUnique({
+          name,
+          category: poiCategory(poi.tags),
+          formattedAddress: poiAddress(poi.tags, poi._lat, poi._lon),
+          source: 'osm',
+        });
+      }
+    }
+  }
+
+  // 3. OSM tags (operator, brand)
+  if (options.osm) {
+    const brand = options.osm.tags['brand'] || options.osm.tags['operator'];
+    if (brand) {
+      addIfUnique({
+        name: brand,
+        category: options.osm.category || 'Organization',
+        source: 'osm',
+      });
+    }
+  }
+
+  return result;
 }

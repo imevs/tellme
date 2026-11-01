@@ -1,0 +1,668 @@
+{
+    "head": {
+        "vars": [
+            "item",
+            "itemLabel",
+            "itemDescription",
+            "distance",
+            "inception",
+            "openingDate",
+            "height",
+            "architectLabel",
+            "styleLabel",
+            "namedAfterLabel",
+            "heritageLabel",
+            "instanceOfLabel",
+            "materialLabel",
+            "wikipediaArticle"
+        ]
+    },
+    "results": {
+        "bindings": [
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936357"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936357"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8061"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.036"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1912-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q130711043"
+                },
+                "itemLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Commemorative plaque to Mikhail Tal"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "plaque in Riga"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.049"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "commemorative plaque"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936346"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936346"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8059"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.064"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1913-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936391"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936391"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8065"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.066"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1910-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55939307"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55939307"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8041"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.076"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1909-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936375"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936375"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8736"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.08"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1801-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "National architectural monument of Latvia"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "building complex"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q50301641"
+                },
+                "itemLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Skolas iela"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "street in Riga, Latvia"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.081"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "street"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936341"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936341"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8058"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.09"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1911-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936379"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936379"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8063"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.091"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1912-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55939273"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55939273"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8039"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.095"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1901-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55939336"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55939336"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8042"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.101"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1913-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q110972177"
+                },
+                "itemLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Commemorative plaque to Ernst Jaakson"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "plaque in Riga"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.102"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "commemorative plaque"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936504"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936504"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8002"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.108"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1909-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936363"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936363"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8062"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.11"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1874-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "National architectural monument of Latvia"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55936368"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55936368"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8923"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.11"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1874-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "monument of art of national importance in Latvia"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q20399513"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q20399513"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "building in Riga, Latvia"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.112"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "building"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55939289"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55939289"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8040"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.115"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1907-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q71256315"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q71256315"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "library in Latvia"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.115"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "2001-01-01T00:00:00Z"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "library"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q55939353"
+                },
+                "itemLabel": {
+                    "type": "literal",
+                    "value": "Q55939353"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Latvian cultural monument No. 8043"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.116"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "1911-01-01T00:00:00Z"
+                },
+                "heritageLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "local architectural monument"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "revenue house"
+                }
+            },
+            {
+                "item": {
+                    "type": "uri",
+                    "value": "http://www.wikidata.org/entity/Q124790188"
+                },
+                "itemLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "Stonewin"
+                },
+                "itemDescription": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "company based in Latvia"
+                },
+                "distance": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#double",
+                    "type": "literal",
+                    "value": "0.116"
+                },
+                "inception": {
+                    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "type": "literal",
+                    "value": "2017-06-14T00:00:00Z"
+                },
+                "instanceOfLabel": {
+                    "xml:lang": "en",
+                    "type": "literal",
+                    "value": "business"
+                }
+            }
+        ]
+    }
+}

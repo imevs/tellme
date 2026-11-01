@@ -58,10 +58,10 @@ TellMe/
 │   │   ├── osm.ts              # OpenStreetMap reverse geocoding and tag parsing
 │   │   ├── wikidata.ts         # Wikidata Query Service SPARQL integration and facts synthesis
 │   │   ├── googlePlaces.ts     # Google Places API (New) integration with multi-tier caching and daily quota cap
-│   │   ├── places.ts           # Wikipedia GeoSearch place discovery
+│   │   ├── street.ts           # Building street guide and context extraction
+│   │   ├── places.ts           # Wikipedia GeoSearch place discovery and fallback POI dataset
 │   │   ├── wiki.ts             # Wikipedia article extracts and interactive keyword parsing
-│   │   ├── overpass.ts         # Distance calculation (Haversine) & category emoji helpers
-│   │   └── gemini.ts           # Gemini AI fallback POI dataset
+│   │   └── overpass.ts         # Distance calculation (Haversine) & category emoji helpers
 │   │
 │   ├── map/
 │   │   └── leaflet.ts          # Map initialization, custom markers, clicked pin, geolocation
@@ -78,10 +78,10 @@ TellMe/
     │   ├── osm.test.ts         # OSM parsing and address formatting tests
     │   ├── wikidata.test.ts    # Wikidata SPARQL aggregation & date formatter tests
     │   ├── googlePlaces.test.ts# Google Places response parser and quota cache tests
+    │   ├── street.test.ts      # Street guide and building detection tests
     │   ├── places.test.ts      # GeoSearch parsing tests
     │   ├── wiki.test.ts        # Extract cleaner and keyword matching tests
-    │   ├── overpass.test.ts    # Haversine distance and emoji mappings tests
-    │   └── gemini.test.ts      # AI response validator tests
+    │   └── overpass.test.ts    # Haversine distance and emoji mappings tests
     └── ui/
         ├── sheet.test.ts       # Bottom sheet rendering and conditional hint tests
         ├── cards.test.ts       # POI deck rendering and selection tests

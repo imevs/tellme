@@ -8,27 +8,26 @@ import { wireFilters } from './ui/filters';
 import { showSkeletons, showEmpty, renderCards, highlightCard } from './ui/cards';
 import {
   openSheet, closeSheet, goBack, renderDesc, renderError, renderEnrichedPlace,
-  initSwipe, registerExploreCallback,
+  initSwipe, registerExploreCallback, isGenericName,
 } from './ui/sheet';
 import {
   initMap, setMarkers, highlightMarker, setClickedMarker, clearClickedMarker,
   flyTo, locateUser, getMapBBox, getMapZoom, getMapCenter,
 } from './map/leaflet';
 import { poiEmoji, poiCategory, poiAddress } from './api/overpass';
-import { fetchNearbyPlaces } from './api/places';
+import { fetchNearbyPlaces, DEFAULT_PARIS_POIS } from './api/places';
 import { fetchWikiDescription } from './api/wiki';
 import { fetchOsmObjectAt, formatOsmAddress, inferOsmEmoji } from './api/osm';
 import { fetchWikidataDetails } from './api/wikidata';
-import { fetchGooglePlaceDetails } from './api/googlePlaces';
+import { fetchGooglePlacesAtAddress, resolvePlacesAtAddress } from './api/googlePlaces';
+import { isBuildingFeature, extractStreetName, fetchStreetInfo } from './api/street';
 import { highlightTerms } from './ui/dom';
-import { DEFAULT_PARIS_POIS } from './api/gemini';
 import {
   IDS, CSS,
-  STORAGE_KEY_API,
   MIN_ZOOM_FOR_POIS,
   FLY_TO_ZOOM,
 } from './constants';
-import type { DescRequest, POI, EnrichedPlaceInfo } from './types';
+import type { POI, EnrichedPlaceInfo } from './types';
 
 // ── Bootstrap ──────────────────────────────────────────
 
@@ -48,7 +47,7 @@ function boot(): void {
 const placesCache = new Map<string, POI[]>();
 
 async function handleViewChange(): Promise<void> {
-  const zoom   = getMapZoom();
+  const zoom = getMapZoom();
   const center = getMapCenter();
 
   if (!center || zoom < MIN_ZOOM_FOR_POIS) {
@@ -123,15 +122,15 @@ async function handleSelectPOI(i: number): Promise<void> {
   clearClickedMarker();
   const name = poi.tags.name ?? poi.tags['name:en'] ?? 'This Place';
   const addr = poiAddress(poi.tags, poi._lat, poi._lon);
-  const cat  = poiCategory(poi.tags);
-  const em   = poiEmoji(poi.tags);
+  const cat = poiCategory(poi.tags);
+  const em = poiEmoji(poi.tags);
 
   store.update({ activeIdx: i, history: [] });
   highlightCard(i);
   highlightMarker(i);
   flyTo(poi._lat, poi._lon, Math.max(getMapZoom(), FLY_TO_ZOOM));
 
-  openSheet(name, `${em} ${cat}`);
+  openSheet(name, `${em} ${cat}`, addr);
   await handleFetchEnrichedPlace({
     name,
     addr,
@@ -151,7 +150,7 @@ async function handleMapClick(lat: number, lon: number): Promise<void> {
   highlightCard(-1);
   highlightMarker(-1);
 
-  openSheet('Inspecting Object…', '🛰️ OpenStreetMap & Wikidata');
+  openSheet('Inspecting Object…', '🛰️ OpenStreetMap');
   await handleFetchEnrichedPlace({ lat, lon });
 }
 
@@ -187,7 +186,7 @@ async function handleExploreTerm(term: string): Promise<void> {
   }
 }
 
-// ── Enriched fetch (OpenStreetMap + Wikidata Query Service) ──
+// ── Enriched fetch (OpenStreetMap + Wikidata Query Service + Street Guide) ──
 
 async function handleFetchEnrichedPlace(params: {
   name?: string | undefined;
@@ -202,19 +201,41 @@ async function handleFetchEnrichedPlace(params: {
     // 1. Fetch OpenStreetMap object at (lat, lon)
     const osm = await fetchOsmObjectAt(params.lat, params.lon).catch(() => null);
 
-    const name = osm?.name || params.name || 'Map Object';
-    const category = osm?.category || params.cat || 'place';
-    const em = params.em || (osm ? inferOsmEmoji(osm.category, osm.type) : '📍');
     const address = (osm ? formatOsmAddress(osm) : null) || params.addr || `${params.lat.toFixed(4)}, ${params.lon.toFixed(4)}`;
+    const isBuilding = isBuildingFeature(osm, params.cat, osm?.tags);
+    const isGeneric = !osm?.name || isGenericName(osm.name);
+    const name = (!isGeneric && osm?.name) || params.name || (isBuilding ? address : 'Map Object');
+    const category = osm?.category || params.cat || (isBuilding ? 'building' : 'place');
+    const em = params.em || (osm ? inferOsmEmoji(osm.category, osm.type) : (isBuilding ? '🏢' : '📍'));
 
-    // Update sheet header immediately with resolved name
-    $(IDS.SHEET_TITLE).textContent    = name;
-    $(IDS.SHEET_SUBTITLE).textContent = `${em} ${category} • OpenStreetMap & Wikidata`;
+    // Extract street name if this is a building
+    const streetName = isBuilding ? extractStreetName(osm, address) : null;
 
-    // 2. Fetch Wikidata Query Service, Wikipedia narrative, and Google Places in parallel
+    // Update sheet header immediately with resolved address and title
+    if (isGeneric && address) {
+      $(IDS.SHEET_TITLE).textContent = address;
+      $(IDS.SHEET_TITLE).setAttribute('title', address);
+      const addrEl = $safe(IDS.SHEET_ADDRESS);
+      if (addrEl) {
+        addrEl.textContent = '';
+        addrEl.setAttribute('hidden', '');
+      }
+    } else {
+      $(IDS.SHEET_TITLE).textContent = name;
+      $(IDS.SHEET_TITLE).setAttribute('title', address ? `${name} — ${address}` : name);
+      const addrEl = $safe(IDS.SHEET_ADDRESS);
+      if (addrEl && address && address !== name) {
+        addrEl.textContent = `📍 ${address}`;
+        addrEl.removeAttribute('hidden');
+      }
+    }
+    $(IDS.SHEET_SUBTITLE).textContent = `${em} ${category} • OpenStreetMap`;
+
+    // 2. Fetch Wikidata Query Service, Wikipedia narrative, Google Places, and Street Info in parallel
     const qid = osm?.wikidataId || params.wikidataId;
+    const placesQuery = (!isGeneric && name !== 'Map Object') ? name : address;
 
-    const [wikidata, wikiResult, googlePlace] = await Promise.all([
+    const [wikidata, wikiResult, googlePlacesResult, streetInfo] = await Promise.all([
       fetchWikidataDetails({
         qid,
         lat: params.lat,
@@ -228,11 +249,27 @@ async function handleFetchEnrichedPlace(params: {
         console.warn('Wikipedia narrative warning:', err);
         return null;
       }),
-      fetchGooglePlaceDetails(name, params.lat, params.lon).catch(err => {
+      fetchGooglePlacesAtAddress(placesQuery, params.lat, params.lon).catch(err => {
         console.warn('Google Places warning:', err);
-        return null;
+        return { primary: null, places: [] };
       }),
+      (isBuilding && streetName)
+        ? fetchStreetInfo(streetName, osm?.address?.city).catch(err => {
+            console.warn('Street info warning:', err);
+            return null;
+          })
+        : Promise.resolve(null),
     ]);
+
+    const googlePlace = googlePlacesResult?.primary ?? null;
+    const placesAtAddress = resolvePlacesAtAddress({
+      address,
+      lat: params.lat,
+      lon: params.lon,
+      osm,
+      googlePlaces: googlePlacesResult?.places,
+      storePois: store.get().pois,
+    });
 
     // Build interactive highlight terms
     const terms = wikiResult?.terms ?? [name];
@@ -248,6 +285,10 @@ async function handleFetchEnrichedPlace(params: {
       lat: params.lat,
       lon: params.lon,
       address,
+      isBuilding,
+      streetName: streetName ?? undefined,
+      streetInfo,
+      placesAtAddress,
       osm,
       wikidata,
       googlePlace,
@@ -264,36 +305,10 @@ async function handleFetchEnrichedPlace(params: {
   }
 }
 
-// ── API key save ───────────────────────────────────────
+// ── About Modal ─────────────────────────────────────────
 
-function saveKey(): void {
-  const input = $safe<HTMLInputElement>(IDS.API_KEY_INPUT);
-  const k = input?.value.trim() ?? '';
-
-  if (!k) { showToast('Please enter your Gemini API key'); return; }
-
-  store.update({ apiKey: k });
-  localStorage.setItem(STORAGE_KEY_API, k);
+function closeModal(): void {
   $safe(IDS.API_MODAL)?.setAttribute('hidden', '');
-  showToast('API key saved ✓');
-
-  const { pendingFetch } = store.get();
-  if (pendingFetch) {
-    store.update({ pendingFetch: null });
-    if (pendingFetch.type === 'term') {
-      void handleExploreTerm(pendingFetch.term);
-    } else {
-      void handleFetchEnrichedPlace({
-        name: pendingFetch.name,
-        addr: pendingFetch.addr,
-        cat: pendingFetch.cat,
-        lat: 0,
-        lon: 0,
-      });
-    }
-  } else {
-    void handleViewChange();
-  }
 }
 
 // ── Fullscreen toggle ──────────────────────────────────
@@ -319,7 +334,7 @@ function toggleFullscreen(): void {
     }
   } else {
     if (doc.exitFullscreen) {
-      void doc.exitFullscreen().catch(() => {});
+      void doc.exitFullscreen().catch(() => { });
     } else if (doc.webkitExitFullscreen) {
       doc.webkitExitFullscreen();
     }
@@ -339,19 +354,16 @@ function updateFullscreenIcon(): void {
 // ── Event wiring ───────────────────────────────────────
 
 function wireListeners(): void {
-  // API modal
-  $safe(IDS.API_SAVE_BTN)?.addEventListener('click', saveKey);
-  $safe(IDS.API_KEY_INPUT)?.addEventListener('keydown', (e: Event) => {
-    if ((e as KeyboardEvent).key === 'Enter') saveKey();
-  });
+  // About modal
+  $safe(IDS.API_SAVE_BTN)?.addEventListener('click', closeModal);
   $safe(IDS.API_MODAL)?.addEventListener('click', (e: MouseEvent) => {
     if (e.target === e.currentTarget) {
-      $safe(IDS.API_MODAL)?.setAttribute('hidden', '');
+      closeModal();
     }
   });
   document.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      $safe(IDS.API_MODAL)?.setAttribute('hidden', '');
+      closeModal();
     }
   });
 
@@ -369,8 +381,6 @@ function wireListeners(): void {
   });
 
   $safe(IDS.SETTINGS_BTN)?.addEventListener('click', () => {
-    const input = $safe<HTMLInputElement>(IDS.API_KEY_INPUT);
-    if (input) input.value = store.get().apiKey;
     $safe(IDS.API_MODAL)?.removeAttribute('hidden');
   });
 

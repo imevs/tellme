@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseWikipediaPlaces, inferCategory } from '../../src/api/places';
+import { parseWikipediaPlaces, inferCategory, DEFAULT_PARIS_POIS } from '../../src/api/places';
 
 describe('inferCategory()', () => {
   it('detects churches and cathedrals as historic', () => {
@@ -78,5 +78,17 @@ describe('parseWikipediaPlaces()', () => {
     expect(parseWikipediaPlaces(null, 0, 0)).toEqual([]);
     expect(parseWikipediaPlaces({}, 0, 0)).toEqual([]);
     expect(parseWikipediaPlaces({ query: {} }, 0, 0)).toEqual([]);
+  });
+});
+
+describe('DEFAULT_PARIS_POIS', () => {
+  it('contains valid curated Paris POIs with coordinates and tags', () => {
+    expect(DEFAULT_PARIS_POIS.length).toBeGreaterThan(0);
+    for (const poi of DEFAULT_PARIS_POIS) {
+      expect(poi.tags.name).toBeTruthy();
+      expect(poi._lat).toBeGreaterThan(48);
+      expect(poi._lon).toBeGreaterThan(2);
+      expect(poi._dist).toBeDefined();
+    }
   });
 });

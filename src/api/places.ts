@@ -184,3 +184,111 @@ export async function fetchNearbyPlaces(
   const json: unknown = await res.json();
   return parseWikipediaPlaces(json, lat, lon, cat);
 }
+
+// ── Default curated places (shown as fallback for Paris) ──
+export const DEFAULT_PARIS_POIS: POI[] = [
+  {
+    id: 1,
+    type: 'node',
+    _lat: 48.8584,
+    _lon: 2.2945,
+    _dist: 4.1,
+    tags: {
+      name: 'Eiffel Tower',
+      tourism: 'attraction',
+      'addr:street': 'Champ de Mars, 5 Av. Anatole France',
+      description: 'Iconic 330-metre 19th-century wrought-iron tower offering panoramic city views.',
+    },
+  },
+  {
+    id: 2,
+    type: 'node',
+    _lat: 48.8606,
+    _lon: 2.3376,
+    _dist: 1.1,
+    tags: {
+      name: 'Louvre Museum',
+      tourism: 'museum',
+      'addr:street': 'Rue de Rivoli, 75001 Paris',
+      description: 'World’s most-visited museum housing the Mona Lisa and thousands of masterworks.',
+    },
+  },
+  {
+    id: 3,
+    type: 'node',
+    _lat: 48.8530,
+    _lon: 2.3499,
+    _dist: 0.4,
+    tags: {
+      name: 'Cathédrale Notre-Dame de Paris',
+      historic: 'monument',
+      'addr:street': '6 Parvis Notre-Dame - Pl. Jean-Paul II',
+      description: 'Medieval Catholic cathedral renowned for its French Gothic architecture and gargoyles.',
+    },
+  },
+  {
+    id: 4,
+    type: 'node',
+    _lat: 48.8555,
+    _lon: 2.3444,
+    _dist: 0.6,
+    tags: {
+      name: 'Sainte-Chapelle',
+      historic: 'church',
+      'addr:street': '10 Bd du Palais, 75001 Paris',
+      description: '13th-century Gothic royal chapel famed for its breathtaking stained-glass windows.',
+    },
+  },
+  {
+    id: 5,
+    type: 'node',
+    _lat: 48.8462,
+    _lon: 2.3449,
+    _dist: 1.3,
+    tags: {
+      name: 'Panthéon',
+      historic: 'monument',
+      'addr:street': 'Pl. du Panthéon, 75005 Paris',
+      description: 'Neoclassical monument and mausoleum honoring France’s most illustrious figures.',
+    },
+  },
+  {
+    id: 6,
+    type: 'node',
+    _lat: 48.8468,
+    _lon: 2.3372,
+    _dist: 1.5,
+    tags: {
+      name: 'Jardin du Luxembourg',
+      leisure: 'park',
+      'addr:street': '75006 Paris',
+      description: 'Lush 17th-century palace gardens with tree-lined promenades and model-sailboat pond.',
+    },
+  },
+  {
+    id: 7,
+    type: 'node',
+    _lat: 48.8540,
+    _lon: 2.3332,
+    _dist: 1.4,
+    tags: {
+      name: 'Café de Flore',
+      amenity: 'cafe',
+      'addr:street': '172 Bd Saint-Germain, 75006 Paris',
+      description: 'Historic café frequented by Sartre, Simone de Beauvoir, and legendary intellectuals.',
+    },
+  },
+  {
+    id: 8,
+    type: 'node',
+    _lat: 48.8656,
+    _lon: 2.3212,
+    _dist: 2.5,
+    tags: {
+      name: 'Place de la Concorde',
+      historic: 'monument',
+      'addr:street': '75008 Paris',
+      description: 'Major public square featuring the 3,300-year-old Luxor Obelisk and monumental fountains.',
+    },
+  },
+];
