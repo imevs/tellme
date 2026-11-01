@@ -2,6 +2,7 @@ import { store } from '../store';
 import { $, $safe, show, hide, showEl, hideEl, esc, highlightTerms } from './dom';
 import { IDS, CSS } from '../constants';
 import { clearClickedMarker } from '../map/leaflet';
+import { clearUrlCoordinates } from '../utils/url';
 import type { HistoryEntry, EnrichedPlaceInfo } from '../types';
 
 // ── Pure Helpers ───────────────────────────────────────
@@ -74,6 +75,7 @@ export function closeSheet(): void {
     .forEach(el => el.classList.remove(CSS.ACTIVE));
 
   clearClickedMarker();
+  clearUrlCoordinates();
 }
 
 // ── Render description ─────────────────────────────────

@@ -9,10 +9,12 @@ import type { POI } from '../types';
 export function initMap(
   onViewChange: () => void,
   onMapClick?: (lat: number, lon: number) => void,
+  initialCenter?: [number, number],
+  initialZoom?: number,
 ): void {
   const map = L.map(IDS.MAP, {
-    center:           DEFAULT_CENTER,
-    zoom:             DEFAULT_ZOOM,
+    center:           initialCenter || DEFAULT_CENTER,
+    zoom:             initialZoom || DEFAULT_ZOOM,
     zoomControl:      false,
     attributionControl: true,
   });

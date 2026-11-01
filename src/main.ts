@@ -22,6 +22,7 @@ import { fetchWikidataDetails } from './api/wikidata';
 import { fetchGooglePlacesAtAddress, resolvePlacesAtAddress } from './api/googlePlaces';
 import { isBuildingFeature, extractStreetName, fetchStreetInfo } from './api/street';
 import { highlightTerms } from './ui/dom';
+import { parseCoordinatesFromUrl, updateUrlCoordinates } from './utils/url';
 import {
   IDS, CSS,
   MIN_ZOOM_FOR_POIS,
@@ -34,9 +35,23 @@ import type { POI, EnrichedPlaceInfo } from './types';
 function boot(): void {
   $safe(IDS.API_MODAL)?.setAttribute('hidden', '');
   registerExploreCallback(handleExploreTerm);
-  initMap(handleViewChange, handleMapClick);
-  void handleViewChange();
-  locateUser(true);
+
+  const initialCoords = parseCoordinatesFromUrl();
+  initMap(
+    handleViewChange,
+    handleMapClick,
+    initialCoords ? [initialCoords.lat, initialCoords.lon] : undefined,
+    initialCoords?.zoom,
+  );
+
+  if (initialCoords) {
+    void handleViewChange();
+    void handleMapClick(initialCoords.lat, initialCoords.lon);
+  } else {
+    void handleViewChange();
+    locateUser(true);
+  }
+
   wireListeners();
   initSwipe();
 }
@@ -125,10 +140,13 @@ async function handleSelectPOI(i: number): Promise<void> {
   const cat = poiCategory(poi.tags);
   const em = poiEmoji(poi.tags);
 
+  const zoom = Math.max(getMapZoom(), FLY_TO_ZOOM);
+  updateUrlCoordinates(poi._lat, poi._lon, zoom);
+
   store.update({ activeIdx: i, history: [] });
   highlightCard(i);
   highlightMarker(i);
-  flyTo(poi._lat, poi._lon, Math.max(getMapZoom(), FLY_TO_ZOOM));
+  flyTo(poi._lat, poi._lon, zoom);
 
   openSheet(name, `${em} ${cat}`, addr);
   await handleFetchEnrichedPlace({
@@ -149,6 +167,9 @@ async function handleMapClick(lat: number, lon: number): Promise<void> {
   store.update({ activeIdx: -1, history: [] });
   highlightCard(-1);
   highlightMarker(-1);
+
+  const zoom = Math.max(getMapZoom(), FLY_TO_ZOOM);
+  updateUrlCoordinates(lat, lon, zoom);
 
   openSheet('Inspecting Object…', '🛰️ OpenStreetMap');
   await handleFetchEnrichedPlace({ lat, lon });
@@ -390,6 +411,18 @@ function wireListeners(): void {
 
   // Filters
   wireFilters(() => void handleViewChange());
+
+  // URL hash change (e.g. browser back/forward or external link)
+  window.addEventListener('hashchange', () => {
+    const coords = parseCoordinatesFromUrl();
+    if (coords) {
+      const zoom = coords.zoom ?? Math.max(getMapZoom(), FLY_TO_ZOOM);
+      flyTo(coords.lat, coords.lon, zoom);
+      void handleMapClick(coords.lat, coords.lon);
+    } else {
+      closeSheet();
+    }
+  });
 }
 
 // ── Go ─────────────────────────────────────────────────
