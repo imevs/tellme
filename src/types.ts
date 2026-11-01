@@ -106,6 +106,7 @@ export interface GooglePlaceDetails {
   openNow?: boolean | undefined;
   websiteUri?: string | undefined;
   formattedAddress?: string | undefined;
+  editorialSummary?: string | undefined;
 }
 
 // ── Enriched Place Info (OSM + Wikidata + Wikipedia + Google Places) ───

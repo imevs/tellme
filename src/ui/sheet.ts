@@ -69,6 +69,15 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     );
   }
 
+  // Google Places Editorial Summary
+  if (info.googlePlace?.editorialSummary) {
+    sections.push(`
+      <div class="sheet-editorial-summary">
+        ${esc(info.googlePlace.editorialSummary)}
+      </div>
+    `);
+  }
+
   // Google Places action links (Website)
   const actions: string[] = [];
   if (info.googlePlace?.websiteUri) {

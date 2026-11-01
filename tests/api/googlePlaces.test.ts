@@ -20,6 +20,10 @@ describe('Google Places API integration (src/api/googlePlaces.ts)', () => {
             id: 'ChIJLU7jZClu5kcR4PcOOO6p3I0',
             formattedAddress: 'Av. Gustave Eiffel, 75007 Paris, France',
             websiteUri: 'https://www.toureiffel.paris/fr',
+            editorialSummary: {
+              text: 'Iconic 1889 Eiffel Tower with city views & dining.',
+              languageCode: 'en',
+            },
             displayName: {
               text: 'Eiffel Tower',
               languageCode: 'en',
@@ -38,6 +42,7 @@ describe('Google Places API integration (src/api/googlePlaces.ts)', () => {
       expect(result?.openNow).toBe(true);
       expect(result?.websiteUri).toBe('https://www.toureiffel.paris/fr');
       expect(result?.formattedAddress).toBe('Av. Gustave Eiffel, 75007 Paris, France');
+      expect(result?.editorialSummary).toBe('Iconic 1889 Eiffel Tower with city views & dining.');
 
       // Verify excluded fields are not present
       expect((result as Record<string, unknown>)['rating']).toBeUndefined();

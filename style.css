@@ -727,6 +727,19 @@ html, body {
   background: #f87171;
 }
 
+/* ─── GOOGLE PLACES EDITORIAL SUMMARY ────────────────── */
+.sheet-editorial-summary {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.035);
+  border-left: 3px solid var(--accent);
+  padding: 10px 14px;
+  border-radius: 0 10px 10px 0;
+  margin-bottom: 14px;
+  font-style: italic;
+}
+
 /* ─── PLACE ACTION BUTTONS ────────────────────────────── */
 .place-actions-row {
   display: flex;

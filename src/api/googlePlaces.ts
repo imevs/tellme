@@ -70,12 +70,17 @@ export function parseGooglePlaceResponse(raw: unknown): GooglePlaceDetails | nul
     ? first['formattedAddress']
     : undefined;
 
+  const editorialSummary = typeof first['editorialSummary'] === 'object' && first['editorialSummary'] !== null
+    ? String((first['editorialSummary'] as Record<string, unknown>)['text'] || '') || undefined
+    : undefined;
+
   return {
     id,
     name: displayName,
     openNow,
     websiteUri,
     formattedAddress,
+    editorialSummary,
   };
 }
 
@@ -178,6 +183,7 @@ export async function fetchGooglePlaceDetails(
       'places.formattedAddress',
       'places.currentOpeningHours.openNow',
       'places.websiteUri',
+      'places.editorialSummary',
     ].join(',');
 
     const res = await fetch(GOOGLE_PLACES_SEARCH_URL, {

@@ -67,6 +67,7 @@ describe('Sheet UI (src/ui/sheet.ts)', () => {
         id: 'ChIJLU7jZClu5kcR4PcOOO6p3I0',
         openNow: true,
         websiteUri: 'https://www.toureiffel.paris/fr',
+        editorialSummary: 'Iconic 1889 Eiffel Tower with city views & dining.',
       },
       descriptionHtml: 'The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars.',
       terms: ['Eiffel Tower'],
@@ -82,6 +83,10 @@ describe('Sheet UI (src/ui/sheet.ts)', () => {
     expect(descEl?.hidden).toBe(false);
 
     const html = descEl?.innerHTML ?? '';
+    // Editorial Summary
+    expect(html).toContain('sheet-editorial-summary');
+    expect(html).toContain('Iconic 1889 Eiffel Tower with city views &amp; dining.');
+
     // Date of construction
     expect(html).toContain('Date of Construction');
     expect(html).toContain('January 28, 1887');

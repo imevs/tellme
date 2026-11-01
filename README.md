@@ -19,7 +19,7 @@ No typing is required—users can dive deeper into contextual narratives and con
   - 🧱 **Construction Materials**.
 - **Interesting Facts & Highlights:** Synthesizes structured Wikidata properties into concise, engaging trivia and highlights.
 - **OpenStreetMap Reverse Geocoding:** Resolves exact address, feature type, and OSM tags using OpenStreetMap Nominatim with Komoot Photon mirror fallback.
-- **Google Places API Integration:** Enriches landmarks and businesses with real-time open status (`Open Now` / `Closed`) and direct official website links (ratings, prices, and phone numbers are explicitly excluded to maintain a clean, uncluttered card).
+- **Google Places API Integration:** Enriches landmarks and businesses with concise editorial summaries, real-time open status (`Open Now` / `Closed`), and direct official website links (ratings, prices, and phone numbers are explicitly excluded to maintain a clean, uncluttered card).
 - **Strict Quota & Rate Limiting:** Google Places API calls are guarded by a multi-tier cache (in-memory + persistent 24-hour `localStorage`) and a daily call quota cap (`gp_calls_YYYY-MM-DD`) to keep usage within limits.
 - **Nearby Places Discovery:** Automatically queries Wikipedia GeoSearch as you pan and zoom to show top attractions, historic sites, parks, and dining spots.
 - **Category Filtering:** Filter places by **All**, **Sights** (🏛️), **Historic** (🏰), **Food** (☕), **Parks** (🌿), and **Shops** (🛍️).
