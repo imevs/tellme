@@ -120,12 +120,6 @@ export function clearClickedMarker(): void {
   }
 }
 
-export function getMapBBox(): string | null {
-  const { map } = store.get();
-  if (!map) return null;
-  const b = map.getBounds();
-  return `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}`;
-}
 
 export function getMapZoom(): number {
   return store.get().map?.getZoom() ?? 0;

@@ -1,10 +1,6 @@
 /** All magic strings and numeric literals — import from here, never hardcode */
 
-// ── Storage ────────────────────────────────────────────
-export const STORAGE_KEY_API = 'tm_key';
-
 // ── Network endpoints ──────────────────────────────────
-export const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
 export const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
 export const NOMINATIM_SEARCH_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 export const PHOTON_REVERSE_ENDPOINT = 'https://photon.komoot.io/reverse';
@@ -23,16 +19,11 @@ export const MIN_ZOOM_FOR_POIS = 13;
 
 // ── Data limits ────────────────────────────────────────
 export const MAX_POIS = 24;
-export const OVERPASS_TIMEOUT_S = 20;
-export const OVERPASS_MAX_NODES = 60;
 export const ADDRESS_DESC_LIMIT = 50;
 
 // ── Timings (ms) ───────────────────────────────────────
 export const DEBOUNCE_MAP_MS = 900;
-export const GEOLOCATION_TIMEOUT = 8000;
 export const TOAST_DURATION_MS = 2800;
-export const SWIPE_CLOSE_PX = 90;
-export const FLY_DURATION_S = 0.9;
 
 // ── Element IDs ────────────────────────────────────────
 export const IDS = {
@@ -45,7 +36,6 @@ export const IDS = {
   LOCATING_STRIP: 'locating-strip',
   DESC_SHEET: 'desc-sheet',
   SHEET_DRAG: 'sheet-drag-handle',
-  SHEET_HEADER: 'sheet-header',
   SHEET_BACK: 'sheet-back',
   SHEET_CLOSE: 'sheet-close',
   SHEET_TITLE: 'sheet-title',
@@ -55,10 +45,8 @@ export const IDS = {
   SHEET_LOADING: 'sheet-loading',
   SHEET_DESC: 'sheet-desc',
   BREADCRUMB: 'breadcrumb',
-  EXPLORE_HINT: 'explore-hint',
   TOAST: 'toast',
   API_MODAL: 'api-modal',
-  API_KEY_INPUT: 'api-key-input',
   API_SAVE_BTN: 'api-save-btn',
   LOCATE_BTN: 'locate-btn',
   FULLSCREEN_BTN: 'fullscreen-btn',
@@ -81,13 +69,6 @@ export const CSS = {
   POI_CARD: 'poi-card',
   CM_WRAP: 'cm-wrap',
   FILTER_CHIP: 'filter-chip',
-} as const;
-
-// ── Data attributes ────────────────────────────────────
-export const DATA = {
-  INDEX: 'i',
-  CAT: 'cat',
-  TERM: 'term',
 } as const;
 
 // ── Tile layer ─────────────────────────────────────────

@@ -289,14 +289,6 @@ export async function fetchGooglePlacesAtAddress(
   return { primary: null, places: [] };
 }
 
-export async function fetchGooglePlaceDetails(
-  name: string,
-  lat?: number,
-  lon?: number,
-): Promise<GooglePlaceDetails | null> {
-  const res = await fetchGooglePlacesAtAddress(name, lat, lon);
-  return res.primary;
-}
 
 /**
  * Consolidates organizations/places at this address from Google Places,

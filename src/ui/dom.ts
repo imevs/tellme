@@ -10,10 +10,6 @@ export function $safe<T extends HTMLElement = HTMLElement>(id: string): T | null
   return document.getElementById(id) as T | null;
 }
 
-// ── Visibility helpers (CSS .hidden class) ─────────────
-export const show = (id: string): void => $safe(id)?.classList.remove('hidden');
-export const hide = (id: string): void => $safe(id)?.classList.add('hidden');
-
 // ── Visibility helpers (HTML hidden attribute) ─────────
 export const showEl = (id: string): void => $safe(id)?.removeAttribute('hidden');
 export const hideEl = (id: string): void => $safe(id)?.setAttribute('hidden', '');

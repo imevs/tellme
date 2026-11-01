@@ -1,5 +1,5 @@
 import { store } from '../store';
-import { $, $safe, show, hide, showEl, hideEl, esc, highlightTerms } from './dom';
+import { $, $safe, showEl, hideEl, esc, highlightTerms } from './dom';
 import { IDS, CSS } from '../constants';
 import { clearClickedMarker } from '../map/leaflet';
 import { clearUrlCoordinates } from '../utils/url';
@@ -406,7 +406,7 @@ export function renderError(message: string): void {
   descEl.innerHTML =
     `<div class="sheet-error">⚠️ ${esc(message)}<br>` +
     `<span style="color:var(--text-2);font-size:12px;margin-top:4px;display:block;">` +
-    `Check your API key in ⚙️ settings.</span></div>`;
+    `Please try tapping another object or moving the map.</span></div>`;
   showEl(IDS.SHEET_DESC);
 }
 

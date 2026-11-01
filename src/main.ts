@@ -12,7 +12,7 @@ import {
 } from './ui/sheet';
 import {
   initMap, setMarkers, highlightMarker, setClickedMarker, clearClickedMarker,
-  flyTo, locateUser, getMapBBox, getMapZoom, getMapCenter,
+  flyTo, locateUser, getMapZoom, getMapCenter,
 } from './map/leaflet';
 import { poiEmoji, poiCategory, poiAddress } from './api/overpass';
 import { fetchNearbyPlaces, DEFAULT_PARIS_POIS } from './api/places';
