@@ -38,6 +38,7 @@ export interface OsmFeature {
   osmId: number;
   osmType: 'node' | 'way' | 'relation';
   name: string;
+  localName?: string | undefined;
   category: string;
   type: string;
   displayName: string;
@@ -47,6 +48,7 @@ export interface OsmFeature {
     suburb?: string | undefined;
     city?: string | undefined;
     country?: string | undefined;
+    countryCode?: string | undefined;
     postcode?: string | undefined;
   };
   tags: Record<string, string>;
@@ -74,6 +76,7 @@ export interface WikidataFactDetails {
   instances: string[];
   materials: string[];
   interestingFacts: string[];
+  imageUrl?: string | null | undefined;
   wikipediaTitle?: string | null | undefined;
   wikipediaUrl?: string | null | undefined;
 }

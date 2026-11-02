@@ -262,19 +262,32 @@ async function handleFetchEnrichedPlace(params: {
     const initialWikiTitle = resolveWikiTitleFromTag(osm?.wikipedia) ??
       ((!isGeneric && name && name !== 'Map Object') ? name : null);
 
+    const wikiContext = {
+      city: osm?.address.city,
+      country: osm?.address.country,
+      countryCode: osm?.address.countryCode,
+      localName: osm?.localName,
+      lat: params.lat,
+      lon: params.lon,
+    };
+
     const [wikidata, initialWikiResult, googlePlacesResult, streetInfo] = await Promise.all([
       fetchWikidataDetails({
         qid,
         lat: isGeneric ? undefined : params.lat,
         lon: isGeneric ? undefined : params.lon,
         name: isGeneric ? undefined : name,
+        localName: osm?.localName,
+        city: osm?.address.city,
+        country: osm?.address.country,
+        countryCode: osm?.address.countryCode,
         isBuilding,
       }).catch(err => {
         console.warn('Wikidata Query Service warning:', err);
         return null;
       }),
       initialWikiTitle
-        ? fetchWikiDescription(initialWikiTitle).catch(err => {
+        ? fetchWikiDescription(initialWikiTitle, wikiContext).catch(err => {
             console.warn('Wikipedia narrative warning:', err);
             return null;
           })
@@ -292,14 +305,18 @@ async function handleFetchEnrichedPlace(params: {
     ]);
 
     let wikiResult = initialWikiResult;
+    const explicitEnWikiTag = resolveWikiTitleFromTag(osm?.wikipedia);
     const fallbackWikiTitle = wikidata?.wikipediaTitle ||
       (wikidata?.label && !isGenericName(wikidata.label) ? wikidata.label : null);
     if (
-      !wikiResult &&
       fallbackWikiTitle &&
-      fallbackWikiTitle.toLowerCase() !== (initialWikiTitle || '').toLowerCase()
+      fallbackWikiTitle.toLowerCase() !== (initialWikiTitle || '').toLowerCase() &&
+      (!wikiResult || (!explicitEnWikiTag && wikidata?.wikipediaTitle && wikiResult.title.toLowerCase() !== wikidata.wikipediaTitle.toLowerCase()))
     ) {
-      wikiResult = await fetchWikiDescription(fallbackWikiTitle).catch(() => null);
+      const wdWiki = await fetchWikiDescription(fallbackWikiTitle, wikiContext).catch(() => null);
+      if (wdWiki) {
+        wikiResult = wdWiki;
+      }
     }
 
     const googlePlace = googlePlacesResult?.primary ?? null;
@@ -326,7 +343,7 @@ async function handleFetchEnrichedPlace(params: {
        rawDesc.toLowerCase().includes(address.toLowerCase()))
     );
     const descriptionHtml = (rawDesc && !isRedundantDesc) ? highlightTerms(rawDesc, terms) : undefined;
-    const thumbnail = wikiResult?.thumbnail;
+    const thumbnail = wikiResult?.thumbnail ?? wikidata?.imageUrl ?? undefined;
 
     const info: EnrichedPlaceInfo = {
       name,

@@ -1,18 +1,43 @@
 import { WIKIDATA_SPARQL_ENDPOINT, WIKIDATA_API_ENDPOINT } from '../constants';
+import { normalizeDiacritics, resolveEnglishCountryName } from './wiki';
 import type { WikidataFactDetails } from '../types';
 
 let wikidataController: AbortController | null = null;
 
 // ── Pure Formatting Helpers ─────────────────────────────────
 
-export function formatConstructionDate(raw: string): string {
+function formatOrdinalCentury(century: number): string {
+  const mod100 = century % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${century}th century`;
+  switch (century % 10) {
+    case 1:
+      return `${century}st century`;
+    case 2:
+      return `${century}nd century`;
+    case 3:
+      return `${century}rd century`;
+    default:
+      return `${century}th century`;
+  }
+}
+
+export function formatConstructionDate(
+  raw: string,
+  precision?: number | string | null,
+): string {
   if (!raw) return '';
   const trimmed = raw.trim();
+  const precNum = precision != null ? Number(precision) : NaN;
 
   // Negative years (BCE) like "-0447-00-00T00:00:00Z"
   if (trimmed.startsWith('-')) {
     const yearMatch = trimmed.match(/^-0*(\d+)/);
     if (yearMatch?.[1]) {
+      const yr = parseInt(yearMatch[1], 10);
+      if (precNum === 7 && !Number.isNaN(yr)) {
+        const century = Math.floor((yr - 1) / 100) + 1;
+        return `${formatOrdinalCentury(century)} BCE`;
+      }
       return `${yearMatch[1]} BCE`;
     }
   }
@@ -22,8 +47,21 @@ export function formatConstructionDate(raw: string): string {
   const isoMatch = clean.match(/^(\d{1,4})(?:-(\d{2}))?(?:-(\d{2}))?(?:T.*)?$/);
   if (isoMatch) {
     const year = isoMatch[1]!;
+    const yearNum = parseInt(year, 10);
     const month = isoMatch[2];
     const day = isoMatch[3];
+
+    // Wikidata precision 7 = century (stored as XX01-01-01T00:00:00Z, e.g. 1201-01-01 = 13th century)
+    if (precNum === 7 && !Number.isNaN(yearNum)) {
+      const century = Math.floor((yearNum - 1) / 100) + 1;
+      return formatOrdinalCentury(century);
+    }
+
+    // Wikidata precision 8 = decade (e.g. 1780s)
+    if (precNum === 8 && !Number.isNaN(yearNum)) {
+      const decade = Math.floor(yearNum / 10) * 10;
+      return `${decade}s`;
+    }
 
     // If month & day are missing or 00 or 01-01 (often default in historical dates)
     if (!month || month === '00' || (month === '01' && (!day || day === '01' || day === '00'))) {
@@ -138,13 +176,29 @@ export function buildInterestingFacts(
   return facts;
 }
 
-// ── Pure SPARQL Response Parser ─────────────────────────────
+// Curated corrections for state monument items where Wikidata's automated import
+// recorded the city of Riga's founding year (1201) instead of the building's construction date.
+const MONUMENT_METADATA_OVERRIDES: Record<
+  string,
+  {
+    inceptionDate?: string;
+    architects?: string[];
+  }
+> = {
+  // Grēcinieku iela 28 (Latvian cultural monument No. 6541 — built 1780, rebuilt 1896 by Karl Johann Felsko)
+  Q56052108: {
+    inceptionDate: '1780 (rebuilt 1896)',
+    architects: ['Karl Johann Felsko'],
+  },
+};
 
 interface SparqlBinding {
   item?: { value: string };
   itemLabel?: { value: string };
   itemDescription?: { value: string };
+  distance?: { value: string };
   inception?: { value: string };
+  inceptionPrecision?: { value: string };
   openingDate?: { value: string };
   height?: { value: string };
   architectLabel?: { value: string };
@@ -153,6 +207,7 @@ interface SparqlBinding {
   heritageLabel?: { value: string };
   instanceOfLabel?: { value: string };
   materialLabel?: { value: string };
+  image?: { value: string };
   wikipediaArticle?: { value: string };
 }
 
@@ -161,6 +216,7 @@ export function parseWikidataSparqlResponse(
   options?: {
     isBuilding?: boolean | undefined;
     preferPhysicalBuilding?: boolean | undefined;
+    maxDistanceKm?: number | undefined;
   },
 ): WikidataFactDetails | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -179,11 +235,11 @@ export function parseWikidataSparqlResponse(
     itemMap.get(itemUri)!.push(b);
   }
 
-  // Filter out macro-territorial entities (countries, historical dominions, administrative regions)
+  // Filter out macro-territorial entities (countries, historical dominions, administrative regions, cities)
   // and if isBuilding is true, filter out streets/roads/thoroughfares
   const nonPhysicalPattern = options?.isBuilding
-    ? /\b(dominion|empire|country|state|administrative|territorial|territory|diocese|province|archbishopric|region|street|road|thoroughfare|avenue|highway|boulevard)\b/i
-    : /\b(dominion|empire|country|state|administrative|territorial|territory|diocese|province|archbishopric|region)\b/i;
+    ? /\b(dominion|empire|country|state|administrative|territorial|territory|diocese|province|archbishopric|region|city|municipality|capital|metropolis|human settlement|street|road|thoroughfare|avenue|highway|boulevard)\b/i
+    : /\b(dominion|empire|country|state|administrative|territorial|territory|diocese|province|archbishopric|region|city|municipality|capital|metropolis|human settlement)\b/i;
 
   const orgOnlyPattern =
     /\b(radio station|television station|broadcaster|network|company|corporation|business|enterprise|organization|organisation|institution|agency|choir|orchestra|ensemble|association|club|recurring event|festival)\b/i;
@@ -193,6 +249,14 @@ export function parseWikidataSparqlResponse(
   let targetBindings: SparqlBinding[] | undefined;
 
   for (const [, itemBindings] of itemMap) {
+    if (options?.maxDistanceKm !== undefined) {
+      const distStr = itemBindings[0]?.distance?.value;
+      const distVal = distStr !== undefined ? parseFloat(distStr) : NaN;
+      if (!Number.isNaN(distVal) && distVal > options.maxDistanceKm) {
+        continue;
+      }
+    }
+
     const isDisqualified = itemBindings.some(b => {
       const inst = b.instanceOfLabel?.value || '';
       return nonPhysicalPattern.test(inst);
@@ -229,9 +293,10 @@ export function parseWikidataSparqlResponse(
   const label = first.itemLabel?.value ?? '';
   const description = first.itemDescription?.value ?? '';
 
-  let rawInception: string | null = null;
+  const inceptionsList: string[] = [];
   let rawOpening: string | null = null;
   let rawHeight: string | null = null;
+  let rawImageUrl: string | null = null;
   let wikipediaArticleUrl: string | null = null;
 
   const architectsSet = new Set<string>();
@@ -242,9 +307,24 @@ export function parseWikidataSparqlResponse(
   const materialsSet  = new Set<string>();
 
   for (const b of targetBindings) {
-    if (!rawInception && b.inception?.value) rawInception = b.inception.value;
+    if (b.inception?.value) {
+      const formattedInc = formatConstructionDate(
+        b.inception.value,
+        b.inceptionPrecision?.value,
+      );
+      // Ignore bogus "1201" (founding year of Riga) placeholder attached by bot imports to Riga buildings
+      const isBogusCityFoundingYear =
+        formattedInc === '1201' &&
+        (options?.isBuilding ||
+          targetBindings.some(tb => /\bbuilding\b/i.test(tb.instanceOfLabel?.value || '')));
+
+      if (formattedInc && !isBogusCityFoundingYear && !inceptionsList.includes(formattedInc)) {
+        inceptionsList.push(formattedInc);
+      }
+    }
     if (!rawOpening && b.openingDate?.value) rawOpening = b.openingDate.value;
     if (!rawHeight && b.height?.value) rawHeight = b.height.value;
+    if (!rawImageUrl && b.image?.value) rawImageUrl = b.image.value;
     if (!wikipediaArticleUrl && b.wikipediaArticle?.value) wikipediaArticleUrl = b.wikipediaArticle.value;
 
     const arch = b.architectLabel?.value;
@@ -266,7 +346,16 @@ export function parseWikidataSparqlResponse(
     if (mat && !mat.startsWith('Q')) materialsSet.add(mat);
   }
 
-  const inceptionDate = rawInception ? formatConstructionDate(rawInception) : null;
+  const monumentOverride = MONUMENT_METADATA_OVERRIDES[qid];
+  if (monumentOverride?.architects) {
+    for (const arch of monumentOverride.architects) {
+      architectsSet.add(arch);
+    }
+  }
+
+  const inceptionDate =
+    monumentOverride?.inceptionDate ??
+    (inceptionsList.length > 0 ? inceptionsList.slice(0, 2).join(' / ') : null);
   const openingDate   = rawOpening ? formatConstructionDate(rawOpening) : null;
   const height        = rawHeight ? formatHeight(rawHeight) : null;
 
@@ -278,6 +367,14 @@ export function parseWikidataSparqlResponse(
     } catch {
       // ignore uri error
     }
+  }
+
+  let imageUrl: string | null = null;
+  if (rawImageUrl) {
+    const httpsImg = rawImageUrl.replace(/^http:\/\//i, 'https://');
+    imageUrl = httpsImg.includes('Special:FilePath/') && !httpsImg.includes('?')
+      ? `${httpsImg}?width=800`
+      : httpsImg;
   }
 
   const partialDetails = {
@@ -293,6 +390,7 @@ export function parseWikidataSparqlResponse(
     heritage: Array.from(heritageSet),
     instances: Array.from(instancesSet),
     materials: Array.from(materialsSet),
+    imageUrl,
     wikipediaTitle,
     wikipediaUrl: wikipediaArticleUrl ?? undefined,
   };
@@ -325,6 +423,7 @@ export function mergeBuildingDetailsIntoEntity(
     styles: primary.styles.length > 0 ? primary.styles : building.styles,
     heritage: Array.from(new Set([...primary.heritage, ...building.heritage])),
     materials: primary.materials.length > 0 ? primary.materials : building.materials,
+    imageUrl: primary.imageUrl ?? building.imageUrl,
   };
 
   return {
@@ -335,29 +434,108 @@ export function mergeBuildingDetailsIntoEntity(
 
 // ── Search entity by name ──────────────────────────────────
 
-export async function searchWikidataEntity(
-  name: string,
+export interface WikidataSearchContext {
+  localName?: string | undefined;
+  city?: string | undefined;
+  country?: string | undefined;
+  countryCode?: string | undefined;
+}
+
+interface WikidataSearchItem {
+  id?: string;
+  label?: string;
+  description?: string;
+}
+
+async function fetchWikidataSearchItems(
+  query: string,
   signal?: AbortSignal,
-): Promise<string | null> {
+): Promise<WikidataSearchItem[]> {
   try {
     const params = new URLSearchParams({
       action: 'wbsearchentities',
-      search: name,
+      search: query,
       language: 'en',
       format: 'json',
       origin: '*',
-      limit: '3',
+      limit: '5',
     });
     const url = `${WIKIDATA_API_ENDPOINT}?${params.toString()}`;
     const res = await fetch(url, signal ? { signal } : {});
-    if (!res.ok) return null;
-
-    const data = await res.json() as { search?: Array<{ id?: string }> };
-    const firstId = data.search?.[0]?.id;
-    return (firstId && /^Q\d+$/.test(firstId)) ? firstId : null;
+    if (!res.ok) return [];
+    const data = (await res.json()) as { search?: WikidataSearchItem[] };
+    return data.search ?? [];
   } catch {
-    return null;
+    return [];
   }
+}
+
+export async function searchWikidataEntity(
+  name: string,
+  signal?: AbortSignal,
+  context?: WikidataSearchContext,
+): Promise<string | null> {
+  const items = await fetchWikidataSearchItems(name, signal);
+
+  if (!context || (!context.city && !context.country && !context.countryCode && !context.localName)) {
+    const firstId = items[0]?.id;
+    return firstId && /^Q\d+$/.test(firstId) ? firstId : null;
+  }
+
+  const engCountry = resolveEnglishCountryName(context.country, context.countryCode);
+  const locationTokens: string[] = [];
+  if (context.city) locationTokens.push(normalizeDiacritics(context.city));
+  if (engCountry) {
+    const normCountry = normalizeDiacritics(engCountry);
+    locationTokens.push(normCountry);
+    if (normCountry.endsWith('ia') || normCountry.endsWith('ya')) {
+      locationTokens.push(normCountry.slice(0, -1));
+    }
+  }
+  if (context.country) locationTokens.push(normalizeDiacritics(context.country));
+  const validTokens = Array.from(new Set(locationTokens.filter(t => t.length >= 3)));
+
+  const matchesLocation = (item: WikidataSearchItem): boolean => {
+    const text = normalizeDiacritics(`${item.label || ''} ${item.description || ''}`);
+    return validTokens.some(tok => text.includes(tok));
+  };
+
+  // 1. Check if any item in primary search matches the local city/country
+  const locationMatched = items.find(it => it.id && /^Q\d+$/.test(it.id) && matchesLocation(it));
+  if (locationMatched?.id) return locationMatched.id;
+
+  // 2. Try localName (e.g. "Aizsardzības ministrija") or location-qualified search ("Ministry of Defence Latvia")
+  const fallbackQueries: string[] = [];
+  if (context.localName && context.localName.toLowerCase() !== name.toLowerCase()) {
+    fallbackQueries.push(context.localName);
+  }
+  if (engCountry) {
+    fallbackQueries.push(`${name} ${engCountry}`);
+  } else if (context.city) {
+    fallbackQueries.push(`${name} ${context.city}`);
+  }
+
+  for (const q of fallbackQueries) {
+    const subItems = await fetchWikidataSearchItems(q, signal);
+    const matched = subItems.find(it => it.id && /^Q\d+$/.test(it.id) && matchesLocation(it)) ??
+      (validTokens.length === 0 ? subItems[0] : undefined);
+    if (matched?.id && /^Q\d+$/.test(matched.id)) {
+      return matched.id;
+    }
+  }
+
+  // 3. Only fall back to first item if we had no location constraints and it is not a generic concept class
+  if (validTokens.length === 0) {
+    const first = items[0];
+    if (first?.id && /^Q\d+$/.test(first.id)) {
+      const isGenericClass = /^(ministry of a government|type of|class of|generic|government ministry responsible for)\b/i.test(
+        (first.description || '').trim(),
+      );
+      if (!isGenericClass) return first.id;
+    }
+  }
+
+  return null;
 }
 
 // ── Fetch Details via SPARQL ───────────────────────────────
@@ -367,14 +545,19 @@ async function fetchSpatialWikidataJson(
   lon: number,
   signal: AbortSignal,
 ): Promise<unknown | null> {
-  const sparqlAround = `SELECT DISTINCT ?item ?itemLabel ?itemDescription ?distance ?inception ?openingDate ?height ?architectLabel ?styleLabel ?namedAfterLabel ?heritageLabel ?instanceOfLabel ?materialLabel ?wikipediaArticle WHERE {
+  const sparqlAround = `SELECT DISTINCT ?item ?itemLabel ?itemDescription ?distance ?inception ?inceptionPrecision ?openingDate ?height ?architectLabel ?styleLabel ?namedAfterLabel ?heritageLabel ?instanceOfLabel ?materialLabel ?image ?wikipediaArticle WHERE {
   SERVICE wikibase:around {
     ?item wdt:P625 ?coord .
     bd:serviceParam wikibase:center "Point(${lon} ${lat})"^^geo:wktLiteral .
     bd:serviceParam wikibase:radius "0.12" .
     bd:serviceParam wikibase:distance ?distance .
   }
-  OPTIONAL { ?item wdt:P571 ?inception . }
+  OPTIONAL {
+    ?item p:P571/psv:P571 [
+      wikibase:timeValue ?inception ;
+      wikibase:timePrecision ?inceptionPrecision
+    ] .
+  }
   OPTIONAL { ?item wdt:P1619 ?openingDate . }
   OPTIONAL { ?item wdt:P2048 ?height . }
   OPTIONAL { ?item wdt:P84 ?architect . }
@@ -383,6 +566,7 @@ async function fetchSpatialWikidataJson(
   OPTIONAL { ?item wdt:P1435 ?heritage . }
   OPTIONAL { ?item wdt:P31 ?instanceOf . }
   OPTIONAL { ?item wdt:P186 ?material . }
+  OPTIONAL { ?item wdt:P18 ?image . }
   OPTIONAL {
     ?wikipediaArticle schema:about ?item ;
                       schema:isPartOf <https://en.wikipedia.org/> .
@@ -409,6 +593,10 @@ export async function fetchWikidataDetails(options: {
   lat?: number | undefined;
   lon?: number | undefined;
   name?: string | undefined;
+  localName?: string | undefined;
+  city?: string | undefined;
+  country?: string | undefined;
+  countryCode?: string | undefined;
   isBuilding?: boolean | undefined;
 }): Promise<WikidataFactDetails | null> {
   wikidataController?.abort();
@@ -425,9 +613,14 @@ export async function fetchWikidataDetails(options: {
 
   // 1. If we have a QID, query Wikidata SPARQL directly for that item
   if (qid) {
-    const sparql = `SELECT DISTINCT ?item ?itemLabel ?itemDescription ?inception ?openingDate ?height ?architectLabel ?styleLabel ?namedAfterLabel ?heritageLabel ?instanceOfLabel ?materialLabel ?wikipediaArticle WHERE {
+    const sparql = `SELECT DISTINCT ?item ?itemLabel ?itemDescription ?inception ?inceptionPrecision ?openingDate ?height ?architectLabel ?styleLabel ?namedAfterLabel ?heritageLabel ?instanceOfLabel ?materialLabel ?image ?wikipediaArticle WHERE {
   VALUES ?item { wd:${qid} }
-  OPTIONAL { ?item wdt:P571 ?inception . }
+  OPTIONAL {
+    ?item p:P571/psv:P571 [
+      wikibase:timeValue ?inception ;
+      wikibase:timePrecision ?inceptionPrecision
+    ] .
+  }
   OPTIONAL { ?item wdt:P1619 ?openingDate . }
   OPTIONAL { ?item wdt:P2048 ?height . }
   OPTIONAL { ?item wdt:P84 ?architect . }
@@ -436,6 +629,7 @@ export async function fetchWikidataDetails(options: {
   OPTIONAL { ?item wdt:P1435 ?heritage . }
   OPTIONAL { ?item wdt:P31 ?instanceOf . }
   OPTIONAL { ?item wdt:P186 ?material . }
+  OPTIONAL { ?item wdt:P18 ?image . }
   OPTIONAL {
     ?wikipediaArticle schema:about ?item ;
                       schema:isPartOf <https://en.wikipedia.org/> .
@@ -466,6 +660,7 @@ export async function fetchWikidataDetails(options: {
               const buildingDetails = parseWikidataSparqlResponse(spatialJson, {
                 isBuilding: true,
                 preferPhysicalBuilding: true,
+                maxDistanceKm: 0.045,
               });
               if (buildingDetails && buildingDetails.qid !== details.qid) {
                 return mergeBuildingDetailsIntoEntity(details, buildingDetails);
@@ -481,34 +676,75 @@ export async function fetchWikidataDetails(options: {
   }
 
   // 2. If no QID or QID query empty, use spatial search around coordinates if available
+  let spatialBuildingCandidate: WikidataFactDetails | null = null;
   if (options.lat != null && options.lon != null) {
     const json = await fetchSpatialWikidataJson(options.lat, options.lon, signal);
     if (json) {
+      const hasSpecificName = Boolean(
+        options.name && options.name.length >= 3 && options.name !== 'Map Object',
+      );
+      const maxDist = hasSpecificName ? 0.045 : undefined;
+
       const preferredBuilding = options.isBuilding
-        ? parseWikidataSparqlResponse(json, { isBuilding: true, preferPhysicalBuilding: true })
+        ? parseWikidataSparqlResponse(json, {
+            isBuilding: true,
+            preferPhysicalBuilding: true,
+            maxDistanceKm: maxDist,
+          })
         : null;
       const details =
         preferredBuilding ??
-        parseWikidataSparqlResponse(json, { isBuilding: options.isBuilding });
+        parseWikidataSparqlResponse(json, {
+          isBuilding: options.isBuilding,
+          maxDistanceKm: maxDist,
+        });
 
       if (details && (details.inceptionDate || details.height || details.architects.length > 0 || details.label)) {
-        return details;
+        if (!hasSpecificName) {
+          return details;
+        }
+        const normLabel = normalizeDiacritics(details.label || '');
+        const normName = normalizeDiacritics(options.name || '');
+        const normLocal = options.localName ? normalizeDiacritics(options.localName) : '';
+        const nameMatchesSpatial =
+          Boolean(normLabel && normName && (normLabel.includes(normName) || normName.includes(normLabel))) ||
+          Boolean(normLabel && normLocal && (normLabel.includes(normLocal) || normLocal.includes(normLabel)));
+
+        if (nameMatchesSpatial) {
+          return details;
+        }
+        spatialBuildingCandidate = preferredBuilding ?? details;
       }
     }
   }
 
   // 3. Fallback: search entity by name if name provided
   if (options.name && options.name.length >= 3 && options.name !== 'Map Object') {
-    const foundQid = await searchWikidataEntity(options.name, signal);
+    const foundQid = await searchWikidataEntity(options.name, signal, {
+      localName: options.localName,
+      city: options.city,
+      country: options.country,
+      countryCode: options.countryCode,
+    });
     if (foundQid) {
-      return fetchWikidataDetails({
+      const namedDetails = await fetchWikidataDetails({
         qid: foundQid,
         lat: options.lat,
         lon: options.lon,
         isBuilding: options.isBuilding,
       });
+      if (namedDetails) {
+        if (
+          spatialBuildingCandidate &&
+          spatialBuildingCandidate.qid !== namedDetails.qid &&
+          (isOrganizationEntity(namedDetails) || !namedDetails.inceptionDate)
+        ) {
+          return mergeBuildingDetailsIntoEntity(namedDetails, spatialBuildingCandidate);
+        }
+        return namedDetails;
+      }
     }
   }
 
-  return null;
+  return spatialBuildingCandidate;
 }

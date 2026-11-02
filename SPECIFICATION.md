@@ -174,14 +174,17 @@ When a POI card is selected or an arbitrary map location is clicked, `handleFetc
                                Synthesized Sheet Render
 ```
 
-### 4.1 Step 1: OpenStreetMap Reverse Geocoding (`fetchOsmObjectAt`)
+### 4.1 Step 1: OpenStreetMap Reverse Geocoding & Address Inventory (`fetchOsmObjectAt` & `fetchAddressInventory`)
 - **Primary Endpoint:** Nominatim Reverse API (`nominatim.openstreetmap.org/reverse?format=jsonv2&extratags=1&namedetails=1&addressdetails=1`).
 - **High-Availability Fallback:** If Nominatim returns non-200, times out, or encounters network errors, the request automatically falls back to **Komoot Photon** (`photon.komoot.io/reverse`).
+- **Landmark-Preserving Address Inventory (`mergeWithAddressPrimary`):**
+  - When a tapped feature has a street and house number, `fetchAddressInventory` queries the building polygon (`zoom=18`) and co-located POIs (`nominatim/search`).
+  - Named landmarks (`isParsedLandmark` — features with explicit names and `wikidataId`/`wikipedia` tags or landmark categories) and their local names (`localName`) are preserved rather than overwritten by generic building ways.
 - **Extracted Metadata:**
   - `osmId`, `osmType` (`node`, `way`, `relation`).
-  - Resolved Name: Evaluates English name (`namedetails.name:en`), local name, namedetails, POI address tags, or formatted street address.
-  - Detailed Address: Road, house number, suburb/neighborhood, city/town, country, postcode.
-  - Entity Identifiers: Linked `wikidataId` (e.g., `Q90`) and `wikipedia` article titles.
+  - Resolved Name & Local Name: Evaluates English name (`namedetails.name:en`), local name (`localName` from `tags.name` / `namedetails.name`), POI address tags, or formatted street address.
+  - Detailed Address: Road, house number, suburb/neighborhood, city/town, country, ISO `countryCode` (e.g., `lv`, `fr`), postcode.
+  - Entity Identifiers: Linked `wikidataId` (falling back to `extratags['operator:wikidata']` and `extratags['brand:wikidata']`) and `wikipedia` article titles (falling back to `extratags['operator:wikipedia']` and `extratags['brand:wikipedia']`).
   - Historical Dates: OSM `start_date`, `year_of_construction`, or `opening_date`.
   - Emoji Classification: Inferred from OSM tags (`tourism`, `amenity`, `historic`, `leisure`, `shop`, `office`, `craft`, `highway`).
 
@@ -189,19 +192,24 @@ When a POI card is selected or an arbitrary map location is clicked, `handleFetc
 - **Primary Engine:** Direct SPARQL queries executed against Wikidata Query Service (`query.wikidata.org/sparql`).
 - **Entity Resolution Strategies:**
   1. *Direct QID:* If the OSM feature provides a `wikidata` tag (e.g. `Q90`).
-  2. *Spatial Coordinate Query (`wikibase:around`):* Queries physical entities (`?place wdt:P625 ?loc`) within a tight radius (20–40 meters) of the tapped point, filtering out abstract conceptual items, events, or non-spatial records.
-  3. *Wikidata Entity Search Fallback:* If SPARQL yields no results, falls back to the Wikidata Search API (`action=wbsearchentities`).
+  2. *Spatial Coordinate Query (`wikibase:around`):* Queries physical entities (`?place wdt:P625 ?loc`) within a tight radius (`45m` for physical building searches, `100m` for general landmarks), filtering out abstract conceptual items, events, non-spatial records, and city/municipality centroids (`city|municipality|capital|metropolis|human settlement`).
+  3. *Location-Aware Wikidata Entity Search Fallback:* If SPARQL yields no results, falls back to the Wikidata Search API (`action=wbsearchentities`) with `WikidataSearchContext` (`localName`, `city`, `country`, `countryCode`). Candidate descriptions and labels are verified against diacritic-normalized location tokens so local venues never match famous foreign namesakes (e.g., *Garden Palace* in Sydney, Australia when inspecting Riga).
+- **Dual Organization & Physical Building Resolution:**
+  - When an inspected building houses a named institution or organization (e.g., *Latvijas Radio* `Q1807092` at `8 Doma laukums`), `fetchWikidataDetails` resolves both the organization entity (`inceptionLabel: 'Established'`) and the co-located physical building (`Q56052094`, `buildingConstructionDate: '1906'`) via a secondary spatial building lookup (`preferPhysicalBuilding: true`, `maxDistanceKm: 0.045`), merging the building's architectural metadata (`buildingConstructionDate`, `architects`, `architecturalStyles`, `heritageStatus`, `imageUrl`) into the entity dossier.
 - **Extracted Properties:**
-  - `P571` (Inception / Construction Date) & `P1619` (Date of Official Opening)
+  - `P571` (Inception / Construction Date, with precision-aware formatting for centuries `precision=7` and decades `precision=8`, plus context-aware label `Construction` vs. `Established`) & `P1619` (Date of Official Opening)
   - `P2048` (Height)
   - `P84` (Architect) & `P193` (Builder)
   - `P149` (Architectural Style, e.g., Gothic, Art Nouveau, Baroque)
   - `P138` (Named In Honor Of)
   - `P1435` (Heritage Designation, e.g., Monument Historique, UNESCO World Heritage)
   - `P186` (Construction Materials, e.g., Limestone, Granite, Steel)
-  - `P31` (Instance Of)
+  - `P18` (Wikimedia Commons Image converted to HTTPS `imageUrl`, used as automatic fallback when no English Wikipedia thumbnail exists)
+  - `P31` (Instance Of) & English Wikipedia sitelink (`wikipediaTitle`)
+- **Data Hygiene & Monument Overrides:**
+  - Filters out erroneous city-founding dates (`1201` on Riga architectural monuments) and applies curated monument metadata overrides (`MONUMENT_METADATA_OVERRIDES`, e.g., `Q56052108` *Grēcinieku iela 28* -> constructed `1780 (rebuilt 1896)`, architect `Karl Johann Felsko`).
 - **Interesting Facts Synthesis (`buildInterestingFacts`):**
-  - Synthesizes human-readable bullet points combining construction beginnings, public opening dates, heights in meters, architect credits, style designations, naming origins, and heritage status.
+  - Synthesizes human-readable bullet points combining construction beginnings (including physical building construction dates for organization headquarters), public opening dates, heights in meters, architect credits, style designations, naming origins, and heritage status.
 
 ### 4.3 Step 3: Google Places API (New) Integration (`fetchGooglePlacesAtAddress`)
 - **Endpoint:** Google Places API (New) `https://places.googleapis.com/v1/places:searchText`.
@@ -220,30 +228,36 @@ When a POI card is selected or an arbitrary map location is clicked, `handleFetc
   - Detects generic placeholder names (e.g., *"Building"*, *"House"*, *"Commercial"*, *"Roof"*, *"Unnamed"*, *"Map Object"*, or raw IDs like `way/12345`).
   - When generic, the application substitutes the formatted street address in the sheet header and suppresses duplicate address pills.
 - **Street Guide Retrieval (`fetchStreetInfo`):**
-  - When inspecting a building, the application extracts the street name and searches Wikipedia and Wikidata for the street's historical significance, name origin, inception, and dimensions.
-  - Surfaced in a dedicated **"🛣️ Street Guide"** card at the bottom of the sheet with thumbnail and direct Wikipedia article links.
+  - When inspecting a building, the application extracts the street name and searches Wikipedia and Wikidata (using diacritic-normalized city matching so streets never fall back to namesakes in other cities) for the street's historical significance, name origin, inception, and dimensions.
+  - Surfaced in a dedicated **"🛣️ Street Guide"** card at the bottom of the sheet only when meaningful narrative content (`> 60` characters) or a thumbnail image is present, suppressing trivial one-line labels.
 - **Places & Organizations at Address (`resolvePlacesAtAddress`):**
   - Aggregates co-located businesses, offices, cafes, and shops situated within the same building or address from Google Places results and nearby OSM points.
+  - Strictly validates street and house number matches (`doesAddressMatchTarget`) to filter out unrelated city-wide results, and deduplicates entries matching the primary inspected place's title or website URL.
   - Rendered in a dedicated **"Places & Organizations at this Address"** card showing company name, category, open status badge, and direct website link.
 
-### 4.5 Step 5: Wikipedia Narrative & Keyword Highlighting
-- **Narrative Extraction (`fetchWikiDescription`):**
-  - Queries `en.wikipedia.org/w/api.php` (`prop=extracts|pageimages`) to fetch introductory paragraphs and hero thumbnail images (`pithumbsize=640`).
+### 4.5 Step 5: Wikipedia Narrative, Location Disambiguation & Keyword Highlighting
+- **Context-Aware Narrative Extraction (`fetchWikiDescription`):**
+  - Chains lookups across `osm.wikipedia`, Wikidata's English sitelink (`wikidata.wikipediaTitle`), and the place name using `en.wikipedia.org/w/api.php` (`prop=extracts|pageimages|links|coordinates`, `pithumbsize=640`).
+  - **Location & Concept Validation (`isGenericOrWrongLocationArticle`):** Validates candidate Wikipedia articles against `WikiLookupContext` (`city`, `country`, `countryCode`, `localName`, `lat`, `lon`). Rejects generic global concept articles (e.g., `"Ministry of defence"` illustrated with a photo from Astana when inspecting the Ministry of Defence in Riga) and distant foreign namesakes (`> 20 km` away via `prop=coordinates`), automatically retrying location-qualified titles (`"${title} (${engCountry})"`, `"${title} of ${engCountry}"`, and `localName`).
+  - **Image Fallback:** If the resolved Wikipedia article lacks a thumbnail (or no English Wikipedia article exists), the hero image automatically falls back to the Wikimedia Commons `wdt:P18` image (`wikidata.imageUrl`).
+  - **Clean Paragraph Formatting (`formatNarrativeHtml`):** Strips opening multi-language parenthetical clutter (e.g., `(Latvian: ...; German: ...)`), splits multi-paragraph extracts into semantic `<p>` elements, and collapses secondary paragraphs behind an interactive **"Read more ▾" / "Show less ▴"** toggle on mobile.
 - **Interactive Keywords (`extractMatchingTerms` & `highlightTerms`):**
   - Analyzes the narrative text to identify key historical figures, architectural styles, events, dynasties, and landmarks.
-  - Replaces identified keywords with clickable interactive pills (`<span class="term" role="button">`).
+  - Replaces identified keywords with clickable, touch-friendly pill buttons (`<span class="term" role="button">`).
   - **Non-Overlapping Highlighting Algorithm:** Sorts terms longest-first (ensuring e.g. *"Gothic architecture"* matches as a single term rather than splitting on *"architecture"*). Uses a byte mask (`Uint8Array`) to guarantee zero duplicate, nested, or broken HTML span tags.
 
 ---
 
 ## 5. User Interface & Interaction Specification
 
-### 5.1 Layout & Visual Design
+### 5.1 Layout, Safe Areas & Visual Design
 
-- **Aesthetic:** Dark-mode glassmorphic theme with backdrop filters (`backdrop-filter: blur(20px)`), translucent dark panels (`rgba(8, 14, 31, 0.85)`), and neon accent highlights (`#4f8eff`, `#00e5ff`).
+- **Aesthetic:** Dark-mode glassmorphic theme with backdrop filters (`backdrop-filter: blur(20px)`), translucent dark panels (`rgba(8, 14, 31, 0.85)`), and neon/amber accent highlights (`#4f8eff`, `#00e5ff`, `var(--amber)`).
 - **Typography:** Google Fonts *Outfit* (weights: 300, 400, 500, 600, 700, 800).
-- **Responsive Viewport Support:**
-  - Mobile: Floating bottom sheet panel with touch drag-handle. Card carousel scrolls horizontally with touch snap.
+- **Responsive Viewport & Mobile Safe Areas:**
+  - Configured with `viewport-fit=cover` and dynamic viewport height units (`78dvh` on `#desc-sheet`).
+  - Honors iOS/Android safe-area insets (`env(safe-area-inset-top)` and `env(safe-area-inset-bottom)`) across `#top-bar`, `#logo`, and `#sheet-body`.
+  - Mobile: Floating bottom sheet panel with touch drag-handle and `44×44px` minimum accessible hit targets on `#sheet-close` and `#sheet-back`. Card carousel scrolls horizontally with touch snap.
   - Tablet / Desktop: Sheet constrained to ergonomic maximum widths with desktop-optimized scrolling and click targets.
 
 ### 5.2 Description Bottom Sheet (`#desc-sheet`)
@@ -251,32 +265,32 @@ When a POI card is selected or an arbitrary map location is clicked, `handleFetc
 The bottom sheet contains the following hierarchical sections:
 1. **Swipe / Drag Handle:** Top drag handle (`#sheet-drag-handle`) supporting downward touch swipe gestures to dismiss the sheet.
 2. **Header Bar:**
-   - Back button (`#sheet-back`): Appears when deep-dive exploration history contains entries (`history.length > 0`).
+   - Back button (`#sheet-back`, `44×44px`): Appears when deep-dive exploration history contains entries (`history.length > 0`).
    - Title column: Displays resolved Landmark Name or Formatted Address.
-   - Address row (`#sheet-address`): Shows `📍 <Address>` when title represents a specific venue or landmark.
-   - Subtitle: Category icon, category name, and primary data source badge (e.g. `🏛️ Historic • OpenStreetMap`).
-   - Close button (`#sheet-close`): Dismisses the sheet and clears active pins.
-3. **Exploration Breadcrumb Bar (`#breadcrumb`):**
-   - Visible during term exploration deep-dives, showing the history trail of explored concepts.
+   - Actionable Address row (`#sheet-address`): Displays a concise, simplified address (`📍 <Street & House Number, Suburb/City>`) when the title represents a specific venue or landmark. Tapping `#sheet-address` copies the address to the clipboard (with toast confirmation) or opens it in Maps.
+   - Subtitle: Category icon, category name, short Wikidata entity description (when `< 45` characters), and primary data source badge (e.g. `🏛️ Historic • OpenStreetMap`).
+   - Close button (`#sheet-close`, `44×44px`): Dismisses the sheet and clears active pins.
+3. **Interactive Exploration Breadcrumb Bar (`#breadcrumb`):**
+   - Visible during term exploration deep-dives, rendering each previous step (`.bc-item`) as a tappable button so users can jump directly back to any point in their exploration trail.
 4. **Content Body (`#sheet-body`):**
-   - **Hero Image:** High-resolution thumbnail image with rounded corners.
-   - **Google Editorial Summary:** Concise italicized editorial synopsis.
+   - **Hero Image (`.sheet-thumb`):** High-resolution thumbnail framed with `object-position: center 25%` to preserve building spires and towers. Tapping the image toggles `.expanded` mode to view the full, uncropped photograph.
+   - **Google Editorial Summary (`.sheet-editorial-summary`):** Concise italicized editorial synopsis styled with an amber accent border.
    - **Action Buttons:** Direct *"🌐 Visit Website ↗"* link.
-   - **Quick Facts Grid (`.facts-grid`):** 2-column responsive grid displaying status (`Open Now` / `Closed`), construction date, public opening date, building height, architect/builder, architectural style, named-in-honor-of, heritage designation, and construction materials.
-   - **Interesting Facts Box (`.facts-section-box`):** ✨ Bulleted list of curated historical highlights.
-   - **Narrative Section:** Wikipedia narrative extract with blue clickable keyword terms.
-   - **Places & Organizations at Address:** Directory listing of businesses/venues co-located at the building.
-   - **Street Guide Block:** Comprehensive dossier about the surrounding street/boulevard.
+   - **Quick Facts Grid (`.facts-grid`):** 2-column responsive grid displaying status (`Open Now` / `Closed`), context-aware inception (`📅 Date of Construction` for buildings vs. `📅 Established` for organizations), public opening date, building height, architect/builder, architectural style, named-in-honor-of, heritage designation, and construction materials.
+   - **Interesting Facts Box (`.facts-section-box`):** ✨ Bulleted list of curated historical highlights. Suppressed when `.facts-grid` already displays all physical building metrics to avoid visual repetition, **except** when inspecting a building that houses an organization (`inceptionLabel === 'Established'`) or has a separate physical `buildingConstructionDate` (e.g., *Latvijas Radio* established in 1925 inside a building constructed in 1906), where the building's construction date is explicitly highlighted as an interesting fact.
+   - **Narrative Section (`.sheet-narrative-section`):** Multi-paragraph Wikipedia narrative (`<p>`) with clean opening text, collapsible **"Read more ▾"** toggle for multi-paragraph histories, and touch-friendly keyword pills (`.term`). Short one-line labels (`< 45` characters) are suppressed from the body and shown in the subtitle instead.
+   - **Places & Organizations at Address:** Directory listing of verified, deduplicated businesses/venues co-located at the building.
+   - **Street Guide Block (`.sheet-street-block`):** Comprehensive dossier about the surrounding street/boulevard (rendered only when substantive history or imagery exists).
 
 ### 5.3 Deep-Dive Hypertext Exploration & Navigation History
 
-- When any blue keyword term (`.term`) is tapped in a narrative:
-  1. The current sheet contents, title, and address are pushed onto the store's `history: HistoryEntry[]` stack.
+- When any blue keyword pill (`.term`) is tapped in a narrative:
+  1. The current sheet contents, title, and address are pushed onto the store's `history: HistoryEntry[]` stack, and a browser history state (`history.pushState`) is recorded.
   2. The sheet header updates to the concept term with subtitle *"🔍 exploring concept"*.
   3. The body displays a loading spinner and resets scroll position to `0`.
   4. Concurrent Wikipedia narrative and Wikidata concept queries resolve the explored topic.
-  5. The back button (`←`) becomes visible in the header bar and the breadcrumb updates.
-- Tapping the back button (`#sheet-back`) pops the latest entry from history and restores the previous view state without re-fetching.
+  5. The back button (`←`) becomes visible in the header bar and the tappable breadcrumb trail updates.
+- Tapping the back button (`#sheet-back`), tapping a previous `.bc-item` breadcrumb, or triggering the mobile hardware/gesture Back button (`window.popstate`) restores the target view state without re-fetching, or closes the open sheet if at the root level.
 
 ### 5.4 Gesture & Keyboard Controls
 
@@ -314,11 +328,11 @@ export interface AppState {
 ### 6.2 Data Model Definitions
 
 - **`POI`:** Extends raw spatial element with normalized tags, resolved coordinates (`_lat`, `_lon`), and Haversine distance in km (`_dist`).
-- **`OsmFeature`:** Normalized representation of OpenStreetMap nodes/ways/relations with structured address components, extracted categories, and external links (`wikidataId`, `wikipedia`).
-- **`WikidataFactDetails`:** Structured architectural and historical facts (dates, height, architects, styles, naming, materials, heritage, and generated interesting facts).
+- **`OsmFeature`:** Normalized representation of OpenStreetMap nodes/ways/relations with English name, preserved `localName`, structured address components (including ISO `countryCode`), extracted categories, and external links (`wikidataId`, `wikipedia`).
+- **`WikidataFactDetails`:** Structured architectural and historical facts (`inceptionDate`, context-aware `inceptionLabel`: `'Construction' | 'Established'`, physical `buildingConstructionDate`, `openingDate`, `height`, `architects`, `builders`, `architecturalStyles`, `namedAfter`, `heritageStatus`, `materials`, `wikipediaTitle`, Wikimedia Commons `imageUrl`, and generated `interestingFacts`).
 - **`GooglePlaceDetails`:** Google Places API representation (editorial summary, open status, website URI, formatted address).
 - **`StreetInfo`:** Detailed dossier about the street on which a building is located.
-- **`AddressPlaceOrganization`:** Represents a business or organization co-located at an address.
+- **`AddressPlaceOrganization`:** Represents a verified, deduplicated business or organization co-located at an address.
 - **`EnrichedPlaceInfo`:** Combined aggregate data object passed to the bottom sheet renderer.
 
 ---
@@ -346,7 +360,7 @@ export interface AppState {
 ### 8.2 Automated Test Suite
 
 - **Framework:** Vitest + jsdom
-- **Test Coverage:** All business logic, parsers, date formatters, distance calculators, sanitizers, URL coordinate parsers, and UI components are covered by 121 unit and integration tests:
+- **Test Coverage:** All business logic, parsers, date formatters (including century/decade precision and monument overrides), location-aware Wikipedia/Wikidata disambiguation, distance calculators, sanitizers, URL coordinate parsers, and UI components are covered by 137 unit and integration tests across 11 test files:
   - `tests/api/osm.test.ts`
   - `tests/api/wikidata.test.ts`
   - `tests/api/googlePlaces.test.ts`

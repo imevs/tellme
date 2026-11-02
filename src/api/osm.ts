@@ -46,6 +46,11 @@ export function parseNominatimResponse(
     (typeof data['display_name'] === 'string' && !addrObj['house_number'] ? data['display_name'].split(',')[0]?.trim() : '') ??
     'Map Object';
 
+  const rawLocalName =
+    namedetails['name'] ??
+    (typeof data['name'] === 'string' && data['name'].trim() ? data['name'].trim() : undefined);
+  const localName = rawLocalName && rawLocalName !== name ? rawLocalName : undefined;
+
   const category = String(data['category'] || (extratags['building'] ? 'building' : 'place'));
   const type     = String(data['type'] || 'feature');
   const displayName = typeof data['display_name'] === 'string' ? data['display_name'] : '';
@@ -79,6 +84,7 @@ export function parseNominatimResponse(
     osmId,
     osmType,
     name,
+    localName,
     category,
     type,
     displayName,
@@ -88,6 +94,7 @@ export function parseNominatimResponse(
       suburb:      addrObj['suburb'] ?? addrObj['neighbourhood'] ?? addrObj['quarter'],
       city:        addrObj['city'] ?? addrObj['town'] ?? addrObj['village'],
       country:     addrObj['country'],
+      countryCode: addrObj['country_code']?.toLowerCase(),
       postcode:    addrObj['postcode'],
     },
     tags: extratags,
@@ -335,6 +342,7 @@ export function mergeWithAddressPrimary(
   if (!isParsedGeneric && isPrimaryGeneric) {
     return {
       ...parsed,
+      localName: parsed.localName ?? primary.localName,
       wikidataId: parsed.wikidataId ?? primary.wikidataId,
       wikipedia: parsed.wikipedia ?? primary.wikipedia,
       startDate: parsed.startDate ?? primary.startDate,
@@ -344,6 +352,7 @@ export function mergeWithAddressPrimary(
   if (parsed.osmType === 'node' || isParsedGeneric || parsed.name !== primary.name) {
     return {
       ...primary,
+      localName: primary.localName ?? parsed.localName,
       wikidataId: primary.wikidataId ?? parsed.wikidataId,
       wikipedia: primary.wikipedia ?? parsed.wikipedia,
       startDate: primary.startDate ?? parsed.startDate,

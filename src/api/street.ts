@@ -1,5 +1,5 @@
 import { WIKIDATA_API_ENDPOINT, WIKIPEDIA_API_ENDPOINT } from '../constants';
-import { cleanWikiExtract, extractMatchingTerms } from './wiki';
+import { cleanWikiExtract, extractMatchingTerms, normalizeDiacritics } from './wiki';
 import { highlightTerms } from '../ui/dom';
 import type { OsmFeature, StreetInfo } from '../types';
 
@@ -116,15 +116,23 @@ export async function searchWikidataStreet(
     const items = data.search || [];
     if (items.length === 0) return null;
 
-    // Prioritize match whose description mentions street and city
-    const cityLower = city ? city.toLowerCase() : '';
+    // Prioritize match whose description mentions street and city (normalized for diacritics, e.g. "Rīga" -> "riga")
+    const cityNorm = city ? normalizeDiacritics(city) : '';
     let chosen = items.find(item => {
       const desc = item.description || '';
-      return STREET_TYPE_REGEX.test(desc) && (!cityLower || desc.toLowerCase().includes(cityLower));
+      return STREET_TYPE_REGEX.test(desc) && (!cityNorm || normalizeDiacritics(desc).includes(cityNorm));
     });
 
     if (!chosen) {
-      chosen = items.find(item => STREET_TYPE_REGEX.test(item.description || ''));
+      chosen = items.find(item => {
+        const desc = item.description || '';
+        if (!STREET_TYPE_REGEX.test(desc)) return false;
+        // If we know the target city, never pick a street whose description explicitly places it in a different city
+        if (cityNorm && /\b(?:in|at)\s+[a-z]/i.test(desc) && !normalizeDiacritics(desc).includes(cityNorm)) {
+          return false;
+        }
+        return true;
+      });
     }
 
     if (!chosen || !chosen.id) return null;

@@ -29,6 +29,14 @@ describe('Wikidata Query Service Integration (src/api/wikidata.ts)', () => {
       expect(formatConstructionDate('')).toBe('');
       expect(formatConstructionDate('12th century')).toBe('12th century');
     });
+
+    it('formats century-precision (precision=7) and decade-precision (precision=8) Wikidata timestamps accurately', () => {
+      // In Wikidata, "13th century" is stored as 1201-01-01T00:00:00Z with precision 7
+      expect(formatConstructionDate('1201-01-01T00:00:00Z', '7')).toBe('13th century');
+      expect(formatConstructionDate('1701-01-01T00:00:00Z', 7)).toBe('18th century');
+      expect(formatConstructionDate('1801-01-01T00:00:00Z', 7)).toBe('19th century');
+      expect(formatConstructionDate('1780-01-01T00:00:00Z', 8)).toBe('1780s');
+    });
   });
 
   describe('formatHeight', () => {
@@ -212,6 +220,7 @@ describe('Wikidata Query Service Integration (src/api/wikidata.ts)', () => {
               inception: { value: '1906-01-01T00:00:00Z' },
               heritageLabel: { value: 'National architectural monument of Latvia' },
               instanceOfLabel: { value: 'building' },
+              image: { value: 'http://commons.wikimedia.org/wiki/Special:FilePath/Gr%C4%93cinieku%20iela%2028%202015-09-29.JPG' },
             },
           ],
         },
@@ -224,6 +233,9 @@ describe('Wikidata Query Service Integration (src/api/wikidata.ts)', () => {
       expect(building).not.toBeNull();
       expect(building?.qid).toBe('Q56052094');
       expect(building?.inceptionDate).toBe('1906');
+      expect(building?.imageUrl).toBe(
+        'https://commons.wikimedia.org/wiki/Special:FilePath/Gr%C4%93cinieku%20iela%2028%202015-09-29.JPG?width=800',
+      );
       expect(building?.interestingFacts).toContain('The building was constructed in 1906.');
 
       const orgPrimary = {
@@ -245,6 +257,38 @@ describe('Wikidata Query Service Integration (src/api/wikidata.ts)', () => {
       expect(merged.buildingConstructionDate).toBe('1906');
       expect(merged.inceptionDate).toBe('November 1, 1925');
       expect(merged.interestingFacts[0]).toBe('The building was constructed in 1906.');
+    });
+
+    it('replaces bogus 1201 city-foundation year on Grēcinieku iela 28 (Q56052108) with actual construction date 1780 (rebuilt 1896)', () => {
+      const mockGrecinieku28 = {
+        results: {
+          bindings: [
+            {
+              item: { value: 'http://www.wikidata.org/entity/Q56052108' },
+              itemLabel: { value: 'Grēcinieku iela 28' },
+              itemDescription: { value: 'Latvian cultural monument No. 6541' },
+              distance: { value: '0.024' },
+              inception: { value: '1201-01-01T00:00:00Z' },
+              inceptionPrecision: { value: '9' },
+              heritageLabel: { value: 'National architectural monument of Latvia' },
+              instanceOfLabel: { value: 'building' },
+              image: {
+                value:
+                  'http://commons.wikimedia.org/wiki/Special:FilePath/Gr%C4%93cinieku%20iela%2028%202015-09-29.JPG',
+              },
+            },
+          ],
+        },
+      };
+
+      const res = parseWikidataSparqlResponse(mockGrecinieku28, {
+        isBuilding: true,
+        preferPhysicalBuilding: true,
+      });
+      expect(res).not.toBeNull();
+      expect(res?.qid).toBe('Q56052108');
+      expect(res?.inceptionDate).toBe('1780 (rebuilt 1896)');
+      expect(res?.architects).toContain('Karl Johann Felsko');
     });
   });
 });

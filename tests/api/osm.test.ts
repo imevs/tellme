@@ -100,6 +100,7 @@ describe('OpenStreetMap API parser (src/api/osm.ts)', () => {
       const result = parseNominatimResponse(raw, 56.94981, 24.10633);
       expect(result).not.toBeNull();
       expect(result?.name).toBe('Radio Latvia');
+      expect(result?.localName).toBe('Latvijas Radio');
       expect(result?.wikidataId).toBe('Q1807092');
       expect(result?.wikipedia).toBe('lv:Latvijas Radio');
     });

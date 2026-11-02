@@ -4,6 +4,8 @@ import {
   extractMatchingTerms,
   parseWikiDescriptionResponse,
   resolveWikiTitleFromTag,
+  isGenericOrWrongLocationArticle,
+  resolveEnglishCountryName,
 } from '../../src/api/wiki';
 
 describe('cleanWikiExtract()', () => {
@@ -85,5 +87,64 @@ describe('parseWikiDescriptionResponse()', () => {
         query: { pages: { '-1': { missing: true } } },
       }),
     ).toThrow();
+  });
+});
+
+describe('isGenericOrWrongLocationArticle()', () => {
+  it('rejects generic global concept article "Ministry of defence" (Astana photo) when inspecting Riga, Latvia', () => {
+    const context = {
+      city: 'Rīga',
+      country: 'Latvija',
+      countryCode: 'lv',
+      localName: 'Aizsardzības ministrija',
+    };
+
+    expect(resolveEnglishCountryName('Latvija', 'lv')).toBe('Latvia');
+
+    // Global concept article (which has the Astana photo on Wikipedia)
+    expect(
+      isGenericOrWrongLocationArticle(
+        'Ministry of defence',
+        'A ministry of defence or defense ministry is the common name for a part of a government found in states where the government is divided into ministries, responsible for matters of military defence.',
+        context,
+      ),
+    ).toBe(true);
+
+    // Wrong-country Ministry of Defence (e.g. Kazakhstan or UK)
+    expect(
+      isGenericOrWrongLocationArticle(
+        'Ministry of Defense (Kazakhstan)',
+        'The Ministry of Defense of the Republic of Kazakhstan is the central executive agency in Astana, Kazakhstan.',
+        context,
+      ),
+    ).toBe(true);
+
+    // Correct local article "Ministry of Defence (Latvia)"
+    expect(
+      isGenericOrWrongLocationArticle(
+        'Ministry of Defence (Latvia)',
+        'The Ministry of Defence of the Republic of Latvia is the government ministry in charge of national security and defence policy in Riga, Latvia.',
+        context,
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects foreign namesake article "Garden Palace" (Sydney, Australia) when inspecting 28 Grēcinieku iela in Riga', () => {
+    const context = {
+      city: 'Rīga',
+      country: 'Latvija',
+      countryCode: 'lv',
+      lat: 56.94651,
+      lon: 24.10707,
+    };
+
+    expect(
+      isGenericOrWrongLocationArticle(
+        'Garden Palace',
+        'The Garden Palace was a large, purpose-built exhibition building constructed to house the Sydney International Exhibition in 1879 in Sydney, Australia.',
+        context,
+        { lat: -33.8647, lon: 151.2119 },
+      ),
+    ).toBe(true);
   });
 });
