@@ -57,16 +57,40 @@ export function formatHeight(raw: string): string {
   return raw;
 }
 
+export function isOrganizationEntity(
+  details: Pick<WikidataFactDetails, 'instances' | 'description'>,
+): boolean {
+  const text = `${details.instances.join(' ')} ${details.description}`.toLowerCase();
+  const isPhysical = /\b(building|church|cathedral|basilica|chapel|castle|palace|fortress|monument|memorial|statue|tower|bridge|arch|house|skyscraper|structure|edifice)\b/i.test(
+    text,
+  );
+  if (isPhysical) return false;
+
+  return /\b(station|radio|television|broadcaster|network|studio|company|corporation|business|enterprise|organization|organisation|institution|agency|choir|orchestra|ensemble|university|college|school|bank|shop|store|restaurant|cafe|bistro|bakery|pharmacy|publisher|ministry|parliament|association|club)\b/i.test(
+    text,
+  );
+}
+
 export function buildInterestingFacts(
   data: Omit<WikidataFactDetails, 'interestingFacts'>,
+  options?: { isBuilding?: boolean | undefined },
 ): string[] {
   const facts: string[] = [];
 
-  // 1. Date of construction & official opening
-  if (data.inceptionDate && data.openingDate && data.inceptionDate !== data.openingDate) {
+  // 1. Date of building construction & official opening / establishment
+  if (data.buildingConstructionDate) {
+    facts.push(`The building was constructed in ${data.buildingConstructionDate}.`);
+    if (data.inceptionDate && data.inceptionDate !== data.buildingConstructionDate) {
+      facts.push(`Established in ${data.inceptionDate}.`);
+    }
+  } else if (data.inceptionDate && data.openingDate && data.inceptionDate !== data.openingDate) {
     facts.push(`Construction began around ${data.inceptionDate}, and it officially opened in ${data.openingDate}.`);
   } else if (data.inceptionDate) {
-    facts.push(`Established / constructed in ${data.inceptionDate}.`);
+    if (options?.isBuilding && !isOrganizationEntity(data)) {
+      facts.push(`The building was constructed in ${data.inceptionDate}.`);
+    } else {
+      facts.push(`Established / constructed in ${data.inceptionDate}.`);
+    }
   } else if (data.openingDate) {
     facts.push(`Officially opened to the public in ${data.openingDate}.`);
   }
@@ -134,7 +158,10 @@ interface SparqlBinding {
 
 export function parseWikidataSparqlResponse(
   raw: unknown,
-  options?: { isBuilding?: boolean | undefined },
+  options?: {
+    isBuilding?: boolean | undefined;
+    preferPhysicalBuilding?: boolean | undefined;
+  },
 ): WikidataFactDetails | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const root = raw as Record<string, unknown>;
@@ -158,6 +185,11 @@ export function parseWikidataSparqlResponse(
     ? /\b(dominion|empire|country|state|administrative|territorial|territory|diocese|province|archbishopric|region|street|road|thoroughfare|avenue|highway|boulevard)\b/i
     : /\b(dominion|empire|country|state|administrative|territorial|territory|diocese|province|archbishopric|region)\b/i;
 
+  const orgOnlyPattern =
+    /\b(radio station|television station|broadcaster|network|company|corporation|business|enterprise|organization|organisation|institution|agency|choir|orchestra|ensemble|association|club|recurring event|festival)\b/i;
+  const physicalStructurePattern =
+    /\b(building|house|palace|castle|church|cathedral|basilica|chapel|monument|memorial|statue|tower|bridge|arch|skyscraper|structure|edifice|hall)\b/i;
+
   let targetBindings: SparqlBinding[] | undefined;
 
   for (const [, itemBindings] of itemMap) {
@@ -165,10 +197,24 @@ export function parseWikidataSparqlResponse(
       const inst = b.instanceOfLabel?.value || '';
       return nonPhysicalPattern.test(inst);
     });
-    if (!isDisqualified) {
-      targetBindings = itemBindings;
-      break;
+    if (isDisqualified) continue;
+
+    if (options?.preferPhysicalBuilding) {
+      const hasPhysicalInstance = itemBindings.some(b => {
+        const inst = `${b.instanceOfLabel?.value || ''} ${b.heritageLabel?.value || ''} ${b.itemDescription?.value || ''}`;
+        return physicalStructurePattern.test(inst);
+      });
+      const isNonPhysicalOrg = itemBindings.some(b => {
+        const inst = `${b.instanceOfLabel?.value || ''} ${b.itemDescription?.value || ''}`;
+        return orgOnlyPattern.test(inst);
+      });
+      if (isNonPhysicalOrg && !hasPhysicalInstance) {
+        continue;
+      }
     }
+
+    targetBindings = itemBindings;
+    break;
   }
 
   if (!targetBindings || targetBindings.length === 0) {
@@ -251,11 +297,39 @@ export function parseWikidataSparqlResponse(
     wikipediaUrl: wikipediaArticleUrl ?? undefined,
   };
 
-  const interestingFacts = buildInterestingFacts(partialDetails);
+  const interestingFacts = buildInterestingFacts(partialDetails, {
+    isBuilding: options?.isBuilding,
+  });
 
   return {
     ...partialDetails,
     interestingFacts,
+  };
+}
+
+export function mergeBuildingDetailsIntoEntity(
+  primary: WikidataFactDetails,
+  building: WikidataFactDetails,
+): WikidataFactDetails {
+  const buildingConstructionDate =
+    primary.buildingConstructionDate ??
+    (building.inceptionDate && building.inceptionDate !== primary.inceptionDate
+      ? building.inceptionDate
+      : building.inceptionDate ?? undefined);
+
+  const mergedBase: Omit<WikidataFactDetails, 'interestingFacts'> = {
+    ...primary,
+    buildingConstructionDate,
+    height: primary.height ?? building.height,
+    architects: primary.architects.length > 0 ? primary.architects : building.architects,
+    styles: primary.styles.length > 0 ? primary.styles : building.styles,
+    heritage: Array.from(new Set([...primary.heritage, ...building.heritage])),
+    materials: primary.materials.length > 0 ? primary.materials : building.materials,
+  };
+
+  return {
+    ...mergedBase,
+    interestingFacts: buildInterestingFacts(mergedBase, { isBuilding: true }),
   };
 }
 
@@ -287,6 +361,48 @@ export async function searchWikidataEntity(
 }
 
 // ── Fetch Details via SPARQL ───────────────────────────────
+
+async function fetchSpatialWikidataJson(
+  lat: number,
+  lon: number,
+  signal: AbortSignal,
+): Promise<unknown | null> {
+  const sparqlAround = `SELECT DISTINCT ?item ?itemLabel ?itemDescription ?distance ?inception ?openingDate ?height ?architectLabel ?styleLabel ?namedAfterLabel ?heritageLabel ?instanceOfLabel ?materialLabel ?wikipediaArticle WHERE {
+  SERVICE wikibase:around {
+    ?item wdt:P625 ?coord .
+    bd:serviceParam wikibase:center "Point(${lon} ${lat})"^^geo:wktLiteral .
+    bd:serviceParam wikibase:radius "0.12" .
+    bd:serviceParam wikibase:distance ?distance .
+  }
+  OPTIONAL { ?item wdt:P571 ?inception . }
+  OPTIONAL { ?item wdt:P1619 ?openingDate . }
+  OPTIONAL { ?item wdt:P2048 ?height . }
+  OPTIONAL { ?item wdt:P84 ?architect . }
+  OPTIONAL { ?item wdt:P149 ?style . }
+  OPTIONAL { ?item wdt:P138 ?namedAfter . }
+  OPTIONAL { ?item wdt:P1435 ?heritage . }
+  OPTIONAL { ?item wdt:P31 ?instanceOf . }
+  OPTIONAL { ?item wdt:P186 ?material . }
+  OPTIONAL {
+    ?wikipediaArticle schema:about ?item ;
+                      schema:isPartOf <https://en.wikipedia.org/> .
+  }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,fr". }
+} ORDER BY ?distance LIMIT 20`;
+
+  try {
+    const url = `${WIKIDATA_SPARQL_ENDPOINT}?query=${encodeURIComponent(sparqlAround)}`;
+    const res = await fetch(url, {
+      signal,
+      headers: { 'Accept': 'application/sparql-results+json' },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw err;
+    return null;
+  }
+}
 
 export async function fetchWikidataDetails(options: {
   qid?: string | undefined;
@@ -336,48 +452,26 @@ export async function fetchWikidataDetails(options: {
       if (res.ok) {
         const json: unknown = await res.json();
         const details = parseWikidataSparqlResponse(json, { isBuilding: options.isBuilding });
-        if (details) return details;
-      }
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') throw err;
-    }
-  }
-
-  // 2. If no QID or QID query empty, use spatial search around coordinates if available
-  if (options.lat != null && options.lon != null) {
-    const sparqlAround = `SELECT DISTINCT ?item ?itemLabel ?itemDescription ?distance ?inception ?openingDate ?height ?architectLabel ?styleLabel ?namedAfterLabel ?heritageLabel ?instanceOfLabel ?materialLabel ?wikipediaArticle WHERE {
-  SERVICE wikibase:around {
-    ?item wdt:P625 ?coord .
-    bd:serviceParam wikibase:center "Point(${options.lon} ${options.lat})"^^geo:wktLiteral .
-    bd:serviceParam wikibase:radius "0.12" .
-    bd:serviceParam wikibase:distance ?distance .
-  }
-  OPTIONAL { ?item wdt:P571 ?inception . }
-  OPTIONAL { ?item wdt:P1619 ?openingDate . }
-  OPTIONAL { ?item wdt:P2048 ?height . }
-  OPTIONAL { ?item wdt:P84 ?architect . }
-  OPTIONAL { ?item wdt:P149 ?style . }
-  OPTIONAL { ?item wdt:P138 ?namedAfter . }
-  OPTIONAL { ?item wdt:P1435 ?heritage . }
-  OPTIONAL { ?item wdt:P31 ?instanceOf . }
-  OPTIONAL { ?item wdt:P186 ?material . }
-  OPTIONAL {
-    ?wikipediaArticle schema:about ?item ;
-                      schema:isPartOf <https://en.wikipedia.org/> .
-  }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,fr". }
-} ORDER BY ?distance LIMIT 20`;
-
-    try {
-      const url = `${WIKIDATA_SPARQL_ENDPOINT}?query=${encodeURIComponent(sparqlAround)}`;
-      const res = await fetch(url, {
-        signal,
-        headers: { 'Accept': 'application/sparql-results+json' },
-      });
-      if (res.ok) {
-        const json: unknown = await res.json();
-        const details = parseWikidataSparqlResponse(json, { isBuilding: options.isBuilding });
-        if (details && (details.inceptionDate || details.height || details.architects.length > 0 || details.label)) {
+        if (details) {
+          // If inspecting a building whose QID points to a housed organization (e.g. operator:wikidata),
+          // also resolve the physical building at these coordinates so its construction date is preserved.
+          if (
+            options.isBuilding &&
+            options.lat != null &&
+            options.lon != null &&
+            (isOrganizationEntity(details) || !details.inceptionDate)
+          ) {
+            const spatialJson = await fetchSpatialWikidataJson(options.lat, options.lon, signal);
+            if (spatialJson) {
+              const buildingDetails = parseWikidataSparqlResponse(spatialJson, {
+                isBuilding: true,
+                preferPhysicalBuilding: true,
+              });
+              if (buildingDetails && buildingDetails.qid !== details.qid) {
+                return mergeBuildingDetailsIntoEntity(details, buildingDetails);
+              }
+            }
+          }
           return details;
         }
       }
@@ -386,11 +480,33 @@ export async function fetchWikidataDetails(options: {
     }
   }
 
+  // 2. If no QID or QID query empty, use spatial search around coordinates if available
+  if (options.lat != null && options.lon != null) {
+    const json = await fetchSpatialWikidataJson(options.lat, options.lon, signal);
+    if (json) {
+      const preferredBuilding = options.isBuilding
+        ? parseWikidataSparqlResponse(json, { isBuilding: true, preferPhysicalBuilding: true })
+        : null;
+      const details =
+        preferredBuilding ??
+        parseWikidataSparqlResponse(json, { isBuilding: options.isBuilding });
+
+      if (details && (details.inceptionDate || details.height || details.architects.length > 0 || details.label)) {
+        return details;
+      }
+    }
+  }
+
   // 3. Fallback: search entity by name if name provided
   if (options.name && options.name.length >= 3 && options.name !== 'Map Object') {
     const foundQid = await searchWikidataEntity(options.name, signal);
     if (foundQid) {
-      return fetchWikidataDetails({ qid: foundQid });
+      return fetchWikidataDetails({
+        qid: foundQid,
+        lat: options.lat,
+        lon: options.lon,
+        isBuilding: options.isBuilding,
+      });
     }
   }
 

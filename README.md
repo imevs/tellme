@@ -38,7 +38,9 @@ The project is built as a modular TypeScript application utilizing an observable
 - **Map Engine:** Leaflet (`leaflet`)
 - **APIs:** OpenStreetMap Nominatim, Komoot Photon, Wikidata Query Service (WDQS SPARQL), Google Places API (New), Wikipedia API
 - **Build Tool:** Vite
-- **Testing:** Vitest + jsdom (119 passing tests)
+- **Testing:** Vitest + jsdom (121 passing tests)
+
+📖 For a comprehensive architectural breakdown, data pipelines, state schemas, and interaction flows, see the **[Full Specification of Functionality (SPECIFICATION.md)](./SPECIFICATION.md)**.
 
 ### Project Structure
 

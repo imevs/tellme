@@ -64,6 +64,7 @@ export interface WikidataFactDetails {
   label: string;
   description: string;
   inceptionDate?: string | null | undefined;
+  buildingConstructionDate?: string | null | undefined;
   openingDate?: string | null | undefined;
   height?: string | null | undefined;
   architects: string[];

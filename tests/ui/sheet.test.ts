@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { renderEnrichedPlace, closeSheet, openSheet, renderDesc, renderError } from '../../src/ui/sheet';
+import {
+  renderEnrichedPlace,
+  closeSheet,
+  openSheet,
+  renderDesc,
+  renderError,
+  inferInceptionLabel,
+  simplifyAddressForDisplay,
+  formatNarrativeHtml,
+  exploreTerm,
+} from '../../src/ui/sheet';
 import { store } from '../../src/store';
 import { IDS } from '../../src/constants';
 import type { EnrichedPlaceInfo } from '../../src/types';
@@ -105,9 +115,8 @@ describe('Sheet UI (src/ui/sheet.ts)', () => {
     expect(html).not.toContain('Price Level');
     expect(html).not.toContain('tel:');
 
-    // Interesting facts
-    expect(html).toContain('Interesting Facts &amp; Highlights');
-    expect(html).toContain('Reaches a structural height of 330 m.');
+    // Redundant Interesting Facts box is omitted when .facts-grid is present
+    expect(html).not.toContain('Interesting Facts &amp; Highlights');
 
     // Data sources MUST NOT be shown
     expect(html).not.toContain('Data Sources:');
@@ -325,5 +334,179 @@ describe('Sheet UI (src/ui/sheet.ts)', () => {
 
     expect(html).not.toContain('sheet-organizations-block');
     expect(html).not.toContain('Places &amp; Organizations at this Address');
+  });
+
+  it('labels P571 as "Established" for organizations/stations and "Date of Construction" for buildings', () => {
+    expect(
+      inferInceptionLabel({
+        name: 'Radio Latvia',
+        subtitle: '📍 amenity',
+        category: 'amenity',
+        emoji: '📍',
+        lat: 56.9498,
+        lon: 24.1063,
+        wikidata: {
+          qid: 'Q1',
+          label: 'Radio Latvia',
+          description: 'Latvian national radio station',
+          inceptionDate: '2013',
+          architects: [],
+          styles: [],
+          namedAfter: [],
+          heritage: [],
+          instances: ['radio station'],
+          materials: [],
+          interestingFacts: [],
+        },
+        terms: [],
+      }),
+    ).toBe('Established');
+
+    expect(
+      inferInceptionLabel({
+        name: 'Riga Cathedral',
+        subtitle: '⛪ historic',
+        category: 'historic',
+        emoji: '⛪',
+        lat: 56.949,
+        lon: 24.104,
+        wikidata: {
+          qid: 'Q2',
+          label: 'Riga Cathedral',
+          description: 'Evangelical Lutheran cathedral in Riga',
+          inceptionDate: '1211',
+          architects: [],
+          styles: [],
+          namedAfter: [],
+          heritage: [],
+          instances: ['cathedral'],
+          materials: [],
+          interestingFacts: [],
+        },
+        terms: [],
+      }),
+    ).toBe('Date of Construction');
+  });
+
+  it('suppresses trivial 1-line narrative fragments and promotes them to subtitle', () => {
+    const info: EnrichedPlaceInfo = {
+      name: 'Radio Latvia',
+      subtitle: '📍 amenity',
+      category: 'amenity',
+      emoji: '📍',
+      lat: 56.9498,
+      lon: 24.1063,
+      descriptionHtml: 'Latvian national radio station',
+      terms: [],
+    };
+
+    renderEnrichedPlace(info);
+
+    const subEl = document.getElementById(IDS.SHEET_SUBTITLE);
+    expect(subEl?.textContent).toBe('📍 amenity • Latvian national radio station');
+
+    const html = document.getElementById(IDS.SHEET_DESC)?.innerHTML ?? '';
+    expect(html).not.toContain('sheet-narrative-section');
+  });
+
+  it('hides trivial street guide block when description is < 40 chars and has no thumbnail', () => {
+    const info: EnrichedPlaceInfo = {
+      name: 'Radio Latvia',
+      subtitle: '📍 amenity',
+      category: 'amenity',
+      emoji: '📍',
+      lat: 56.9498,
+      lon: 24.1063,
+      isBuilding: true,
+      streetName: 'Doma laukums',
+      streetInfo: {
+        name: 'Doma laukums',
+        subtitle: '🛣️ Street in Riga',
+        rawDescription: 'square in Riga, Latvia',
+        descriptionHtml: '<p>square in Riga, Latvia</p>',
+      },
+      terms: [],
+    };
+
+    renderEnrichedPlace(info);
+    const html = document.getElementById(IDS.SHEET_DESC)?.innerHTML ?? '';
+    expect(html).not.toContain('sheet-street-block');
+  });
+
+  it('formats multi-paragraph narratives with <p> tags and a working "Read more ▾" toggle', () => {
+    const html = formatNarrativeHtml('First paragraph of history.\n\nSecond paragraph of details.');
+    expect(html).toContain('<p class="narrative-para">First paragraph of history.</p>');
+    expect(html).toContain('<div class="narrative-more" hidden><p class="narrative-para">Second paragraph of details.</p></div>');
+    expect(html).toContain('narrative-toggle-btn');
+
+    renderDesc('Paragraph one about Riga Cathedral.\n\nParagraph two about Gothic architecture.', []);
+    const descEl = document.getElementById(IDS.SHEET_DESC)!;
+    const toggleBtn = descEl.querySelector<HTMLButtonElement>('.narrative-toggle-btn');
+    const moreEl = descEl.querySelector<HTMLElement>('.narrative-more');
+    expect(toggleBtn).not.toBeNull();
+    expect(moreEl?.hasAttribute('hidden')).toBe(true);
+
+    toggleBtn?.click();
+    expect(moreEl?.hasAttribute('hidden')).toBe(false);
+    expect(toggleBtn?.textContent).toBe('Show less ▴');
+  });
+
+  it('simplifies verbose addresses and renders tappable breadcrumb buttons', () => {
+    expect(simplifyAddressForDisplay('8 Doma laukums, Old Riga, Riga, LV-1050, Latvia')).toBe(
+      '8 Doma laukums, Old Riga, Riga',
+    );
+
+    openSheet('Riga Cathedral', '⛪ Cathedral', '6 Herdera laukums, Riga');
+    exploreTerm('Brick Gothic');
+    exploreTerm('Hanseatic League');
+
+    const bc = document.getElementById(IDS.BREADCRUMB)!;
+    const buttons = bc.querySelectorAll<HTMLButtonElement>('button.bc-item');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]?.textContent).toBe('Riga Cathedral');
+
+    // Tapping the first breadcrumb jumps directly back to Riga Cathedral
+    buttons[0]?.click();
+    expect(document.getElementById(IDS.SHEET_TITLE)?.textContent).toBe('Riga Cathedral');
+    expect(store.get().history).toHaveLength(0);
+  });
+
+  it('mentions the date of building construction as an interesting fact for the Latvijas Radio building', () => {
+    const info: EnrichedPlaceInfo = {
+      name: 'Radio Latvia',
+      subtitle: '📍 amenity',
+      category: 'amenity',
+      emoji: '📍',
+      lat: 56.94981,
+      lon: 24.10633,
+      address: '8 Doma laukums, Old Riga, Riga, Latvia',
+      isBuilding: true,
+      wikidata: {
+        qid: 'Q1807092',
+        label: 'Latvijas Radio',
+        description: 'public radio broadcasting organization in Latvia',
+        inceptionDate: 'November 1, 1925',
+        buildingConstructionDate: '1906',
+        architects: [],
+        styles: [],
+        namedAfter: [],
+        heritage: ['National architectural monument of Latvia'],
+        instances: ['radio station', 'business'],
+        materials: [],
+        interestingFacts: [
+          'The building was constructed in 1906.',
+          'Established in November 1, 1925.',
+        ],
+      },
+      terms: ['Latvijas Radio'],
+    };
+
+    renderEnrichedPlace(info);
+
+    const html = document.getElementById(IDS.SHEET_DESC)?.innerHTML ?? '';
+    expect(html).toContain('Established');
+    expect(html).toContain('November 1, 1925');
+    expect(html).toContain('Interesting Facts &amp; Highlights');
+    expect(html).toContain('The building was constructed in 1906.');
   });
 });

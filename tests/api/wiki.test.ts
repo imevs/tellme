@@ -3,6 +3,7 @@ import {
   cleanWikiExtract,
   extractMatchingTerms,
   parseWikiDescriptionResponse,
+  resolveWikiTitleFromTag,
 } from '../../src/api/wiki';
 
 describe('cleanWikiExtract()', () => {
@@ -14,9 +15,24 @@ describe('cleanWikiExtract()', () => {
     expect(cleaned).not.toContain('EYE-fəl');
   });
 
+  it('cleans Latvian and German parenthetical translations', () => {
+    const raw = 'Riga Cathedral (Latvian: Rīgas Doms; German: Dom zu Riga) is the Evangelical Lutheran cathedral in Riga, Latvia.';
+    const cleaned = cleanWikiExtract(raw);
+    expect(cleaned).toBe('Riga Cathedral is the Evangelical Lutheran cathedral in Riga, Latvia.');
+  });
+
   it('preserves clean sentences', () => {
     const raw = 'The Louvre Museum is the world’s most-visited museum. It is located in Paris.';
     expect(cleanWikiExtract(raw)).toBe(raw);
+  });
+});
+
+describe('resolveWikiTitleFromTag()', () => {
+  it('extracts English title and returns null for non-English prefix so Wikidata sitelink is preferred', () => {
+    expect(resolveWikiTitleFromTag('en:Riga Cathedral')).toBe('Riga Cathedral');
+    expect(resolveWikiTitleFromTag('Riga Cathedral')).toBe('Riga Cathedral');
+    expect(resolveWikiTitleFromTag('lv:Rīgas Doms')).toBeNull();
+    expect(resolveWikiTitleFromTag(null)).toBeNull();
   });
 });
 

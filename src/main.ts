@@ -16,7 +16,7 @@ import {
 } from './map/leaflet';
 import { poiEmoji, poiCategory, poiAddress } from './api/overpass';
 import { fetchNearbyPlaces, DEFAULT_PARIS_POIS } from './api/places';
-import { fetchWikiDescription } from './api/wiki';
+import { fetchWikiDescription, resolveWikiTitleFromTag } from './api/wiki';
 import { fetchOsmObjectAt, formatOsmAddress, inferOsmEmoji } from './api/osm';
 import { fetchWikidataDetails } from './api/wikidata';
 import { fetchGooglePlacesAtAddress, resolvePlacesAtAddress } from './api/googlePlaces';
@@ -179,10 +179,15 @@ async function handleMapClick(lat: number, lon: number): Promise<void> {
 
 async function handleExploreTerm(term: string): Promise<void> {
   try {
-    const [result, wikidata] = await Promise.all([
+    const [initialResult, wikidata] = await Promise.all([
       fetchWikiDescription(term).catch(() => null),
       fetchWikidataDetails({ name: term }).catch(() => null),
     ]);
+
+    let result = initialResult;
+    if (!result && wikidata?.wikipediaTitle && wikidata.wikipediaTitle.toLowerCase() !== term.toLowerCase()) {
+      result = await fetchWikiDescription(wikidata.wikipediaTitle).catch(() => null);
+    }
 
     if (result) {
       renderDesc(result.description, result.terms, result.thumbnail);
@@ -254,8 +259,10 @@ async function handleFetchEnrichedPlace(params: {
     // 2. Fetch Wikidata Query Service, Wikipedia narrative, Google Places, and Street Info in parallel
     const qid = osm?.wikidataId || params.wikidataId;
     const placesQuery = (!isGeneric && name !== 'Map Object') ? name : address;
+    const initialWikiTitle = resolveWikiTitleFromTag(osm?.wikipedia) ??
+      ((!isGeneric && name && name !== 'Map Object') ? name : null);
 
-    const [wikidata, wikiResult, googlePlacesResult, streetInfo] = await Promise.all([
+    const [wikidata, initialWikiResult, googlePlacesResult, streetInfo] = await Promise.all([
       fetchWikidataDetails({
         qid,
         lat: isGeneric ? undefined : params.lat,
@@ -266,8 +273,8 @@ async function handleFetchEnrichedPlace(params: {
         console.warn('Wikidata Query Service warning:', err);
         return null;
       }),
-      (!isGeneric && name && name !== 'Map Object')
-        ? fetchWikiDescription(name).catch(err => {
+      initialWikiTitle
+        ? fetchWikiDescription(initialWikiTitle).catch(err => {
             console.warn('Wikipedia narrative warning:', err);
             return null;
           })
@@ -284,9 +291,22 @@ async function handleFetchEnrichedPlace(params: {
         : Promise.resolve(null),
     ]);
 
+    let wikiResult = initialWikiResult;
+    const fallbackWikiTitle = wikidata?.wikipediaTitle ||
+      (wikidata?.label && !isGenericName(wikidata.label) ? wikidata.label : null);
+    if (
+      !wikiResult &&
+      fallbackWikiTitle &&
+      fallbackWikiTitle.toLowerCase() !== (initialWikiTitle || '').toLowerCase()
+    ) {
+      wikiResult = await fetchWikiDescription(fallbackWikiTitle).catch(() => null);
+    }
+
     const googlePlace = googlePlacesResult?.primary ?? null;
     const placesAtAddress = resolvePlacesAtAddress({
       address,
+      primaryName: name,
+      primaryWebsiteUri: googlePlace?.websiteUri,
       lat: params.lat,
       lon: params.lon,
       osm,
@@ -422,8 +442,22 @@ function wireListeners(): void {
   // Filters
   wireFilters(() => void handleViewChange());
 
+  // Mobile back button / browser history traversal for explored terms
+  window.addEventListener('popstate', () => {
+    if (store.get().history.length > 0) {
+      goBack();
+      return;
+    }
+    if (!parseCoordinatesFromUrl()) {
+      closeSheet();
+    }
+  });
+
   // URL hash change (e.g. browser back/forward or external link)
   window.addEventListener('hashchange', () => {
+    if (store.get().history.length > 0) {
+      return;
+    }
     const coords = parseCoordinatesFromUrl();
     if (coords) {
       const zoom = coords.zoom ?? Math.max(getMapZoom(), FLY_TO_ZOOM);

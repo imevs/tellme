@@ -7,15 +7,38 @@ export interface WikiDescriptionResult {
   thumbnail?: string | undefined;
 }
 
+/**
+ * Extracts an English-compatible Wikipedia article title from an OSM `wikipedia` tag
+ * (e.g. "en:Riga Cathedral" -> "Riga Cathedral", "lv:Rīgas Doms" -> null so Wikidata sitelink is preferred).
+ */
+export function resolveWikiTitleFromTag(rawTag?: string | null): string | null {
+  if (!rawTag || !rawTag.trim()) return null;
+  const trimmed = rawTag.trim();
+  const colonIdx = trimmed.indexOf(':');
+  if (colonIdx !== -1) {
+    const lang = trimmed.slice(0, colonIdx).toLowerCase();
+    const title = trimmed.slice(colonIdx + 1).trim();
+    if (!title) return null;
+    return lang === 'en' ? title : null;
+  }
+  return trimmed;
+}
+
+
 /** Clean Wikipedia pronunciation guides and bracketed clutter for a crisp reading experience */
 export function cleanWikiExtract(text: string): string {
   return text
-    // Remove phonetic guides like ( EYE-fəl; French: Tour Eiffel [tuʁ ɛfɛl] )
-    .replace(/\(\s*([A-Z]{2,}-[^;)]*;?[^)]*|French:[^)]*|listen\s*\([^)]*\))\s*\)/gi, '')
+    // Remove phonetic guides and language translations like ( EYE-fəl; French: Tour Eiffel ) or (Latvian: Rīgas Doms; German: Dom zu Riga)
+    .replace(
+      /\(\s*([A-Z]{2,}-[^;)]*;?[^)]*|(?:French|Latvian|German|Russian|Spanish|Italian|Latin|Polish|Estonian|Lithuanian|Swedish|Low German|Livonian):[^)]*|listen\s*\([^)]*\))\s*\)/gi,
+      '',
+    )
     // Remove empty brackets left over
     .replace(/\(\s*\)/g, '')
     // Collapse extra spaces
     .replace(/[ \t]{2,}/g, ' ')
+    // Clean space before punctuation left by removed parenthetical
+    .replace(/\s+([,.;:])/g, '$1')
     // Limit to first 2-3 engaging paragraphs
     .split('\n\n')
     .filter(p => p.trim().length > 20)

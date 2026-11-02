@@ -4,6 +4,7 @@ import {
   formatHeight,
   buildInterestingFacts,
   parseWikidataSparqlResponse,
+  mergeBuildingDetailsIntoEntity,
 } from '../../src/api/wikidata';
 
 describe('Wikidata Query Service Integration (src/api/wikidata.ts)', () => {
@@ -191,6 +192,59 @@ describe('Wikidata Query Service Integration (src/api/wikidata.ts)', () => {
       };
 
       expect(parseWikidataSparqlResponse(mockMacroEntities)).toBeNull();
+    });
+
+    it('prefers physical building over radio station in spatial search when preferPhysicalBuilding is true', () => {
+      const mockAround = {
+        results: {
+          bindings: [
+            {
+              item: { value: 'http://www.wikidata.org/entity/Q18615317' },
+              itemLabel: { value: 'Latvijas Radio 5' },
+              itemDescription: { value: 'Latvian national radio station' },
+              inception: { value: '2013-01-01T00:00:00Z' },
+              instanceOfLabel: { value: 'radio station' },
+            },
+            {
+              item: { value: 'http://www.wikidata.org/entity/Q56052094' },
+              itemLabel: { value: 'Doma laukums 8A' },
+              itemDescription: { value: 'building in Riga' },
+              inception: { value: '1906-01-01T00:00:00Z' },
+              heritageLabel: { value: 'National architectural monument of Latvia' },
+              instanceOfLabel: { value: 'building' },
+            },
+          ],
+        },
+      };
+
+      const building = parseWikidataSparqlResponse(mockAround, {
+        isBuilding: true,
+        preferPhysicalBuilding: true,
+      });
+      expect(building).not.toBeNull();
+      expect(building?.qid).toBe('Q56052094');
+      expect(building?.inceptionDate).toBe('1906');
+      expect(building?.interestingFacts).toContain('The building was constructed in 1906.');
+
+      const orgPrimary = {
+        qid: 'Q1807092',
+        label: 'Latvijas Radio',
+        description: 'public radio broadcasting organization in Latvia',
+        inceptionDate: 'November 1, 1925',
+        architects: [],
+        styles: [],
+        namedAfter: [],
+        heritage: [],
+        instances: ['radio station', 'business'],
+        materials: [],
+        interestingFacts: [],
+        wikipediaTitle: 'Latvijas Radio',
+      };
+
+      const merged = mergeBuildingDetailsIntoEntity(orgPrimary, building!);
+      expect(merged.buildingConstructionDate).toBe('1906');
+      expect(merged.inceptionDate).toBe('November 1, 1925');
+      expect(merged.interestingFacts[0]).toBe('The building was constructed in 1906.');
     });
   });
 });

@@ -1,5 +1,6 @@
 import { store } from '../store';
 import { $, $safe, showEl, hideEl, esc, highlightTerms } from './dom';
+import { showToast } from './toast';
 import { IDS, CSS } from '../constants';
 import { clearClickedMarker } from '../map/leaflet';
 import { clearUrlCoordinates } from '../utils/url';
@@ -37,6 +38,91 @@ export function isGenericName(name?: string | null): boolean {
   return false;
 }
 
+/**
+ * Determines whether P571 (inception / start date) should be labeled
+ * "Established" (for organizations, broadcasters, businesses, institutions)
+ * or "Date of Construction" (for buildings, monuments, physical structures).
+ */
+export function inferInceptionLabel(info: EnrichedPlaceInfo): string {
+  const instancesText = (info.wikidata?.instances || []).join(' ');
+  const wdDesc = info.wikidata?.description || '';
+  const osmType = `${info.osm?.category || ''} ${info.osm?.type || ''} ${info.category || ''}`;
+  const combined = `${instancesText} ${wdDesc} ${osmType}`.toLowerCase();
+
+  const isPhysicalStructure = /\b(building|church|cathedral|basilica|chapel|castle|palace|fortress|monument|memorial|statue|tower|bridge|arch|house|skyscraper|structure|edifice)\b/i.test(
+    `${instancesText} ${wdDesc}`,
+  );
+  if (isPhysicalStructure) {
+    return 'Date of Construction';
+  }
+
+  const isOrganization = /\b(station|radio|television|broadcaster|network|studio|company|corporation|business|enterprise|organization|organisation|institution|agency|choir|orchestra|ensemble|university|college|school|bank|shop|store|restaurant|cafe|bistro|bakery|pharmacy|publisher|ministry|parliament|association|club)\b/i.test(
+    combined,
+  );
+  if (isOrganization) {
+    return 'Established';
+  }
+
+  return 'Date of Construction';
+}
+
+/**
+ * Simplifies verbose 4+ segment OSM addresses (e.g. dropping trailing country/region/postcode noise)
+ * while preserving concise 1-3 segment addresses intact.
+ */
+export function simplifyAddressForDisplay(rawAddress?: string | null): string {
+  if (!rawAddress) return '';
+  const parts = rawAddress.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length <= 3) return rawAddress.trim();
+  const filtered = parts.filter(p => !/^[A-Z]{0,3}-?\d{4,6}$/i.test(p));
+  return filtered.slice(0, 3).join(', ');
+}
+
+/**
+ * Wraps multi-paragraph narrative HTML into <p> elements and adds a collapsible
+ * "Read more" toggle when there are multiple paragraphs.
+ */
+export function formatNarrativeHtml(rawHtml: string): string {
+  const trimmed = rawHtml.trim();
+  if (!trimmed) return '';
+
+  const rawParas = trimmed
+    .split(/\n{2,}/)
+    .map(p => p.trim())
+    .filter(Boolean);
+
+  const paras = rawParas.map(p => (p.startsWith('<p') ? p : `<p class="narrative-para">${p}</p>`));
+  if (paras.length <= 1) {
+    return paras[0] ?? '';
+  }
+
+  const first = paras[0]!;
+  const rest = paras.slice(1).join('');
+  return (
+    `${first}` +
+    `<div class="narrative-more" hidden>${rest}</div>` +
+    `<button type="button" class="narrative-toggle-btn" aria-expanded="false">Read more ▾</button>`
+  );
+}
+
+function wireAddressAction(addrEl: HTMLElement, addressText: string): void {
+  addrEl.setAttribute('role', 'button');
+  addrEl.setAttribute('tabindex', '0');
+  addrEl.setAttribute('title', 'Tap to copy address');
+  addrEl.onclick = () => {
+    void navigator.clipboard?.writeText(addressText).catch(() => {});
+    showToast('Address copied to clipboard 📋');
+  };
+  addrEl.onkeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      addrEl.click();
+    }
+  };
+}
+
+
+
 // ── Open / close ───────────────────────────────────────
 
 export function openSheet(title: string, subtitle: string, address?: string): void {
@@ -45,9 +131,11 @@ export function openSheet(title: string, subtitle: string, address?: string): vo
 
   const addrEl = $safe(IDS.SHEET_ADDRESS);
   if (addrEl) {
-    if (address && address !== title) {
-      addrEl.textContent = `📍 ${address}`;
+    const cleanAddr = simplifyAddressForDisplay(address);
+    if (cleanAddr && cleanAddr !== title) {
+      addrEl.textContent = `📍 ${cleanAddr}`;
       addrEl.removeAttribute('hidden');
+      wireAddressAction(addrEl, address || cleanAddr);
     } else {
       addrEl.textContent = '';
       addrEl.setAttribute('hidden', '');
@@ -82,9 +170,9 @@ export function closeSheet(): void {
 export function renderDesc(description: string, terms: string[], image?: string): void {
   hideEl(IDS.SHEET_LOADING);
 
-  let html = highlightTerms(description, terms);
+  let html = formatNarrativeHtml(highlightTerms(description, terms));
   if (image) {
-    html = `<div class="sheet-hero-img-wrap"><img class="sheet-hero-img" src="${esc(image)}" alt="" /></div>${html}`;
+    html = `<div class="sheet-hero-img-wrap" role="button" tabindex="0" title="Tap to toggle full photo"><img class="sheet-hero-img" src="${esc(image)}" alt="" /></div>${html}`;
   }
 
   const descEl = $(IDS.SHEET_DESC);
@@ -96,7 +184,8 @@ export function renderDesc(description: string, terms: string[], image?: string)
 export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
   hideEl(IDS.SHEET_LOADING);
 
-  const displayAddress = info.address || info.googlePlace?.formattedAddress;
+  const rawAddress = info.address || info.googlePlace?.formattedAddress;
+  const displayAddress = simplifyAddressForDisplay(rawAddress);
   const isGeneric = isGenericName(info.name) ||
     Boolean(info.isBuilding && info.streetName && info.name.trim().toLowerCase() === info.streetName.trim().toLowerCase());
 
@@ -104,7 +193,7 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
   // If object has a specific name, show name in title and address directly below it in title column.
   if (isGeneric && displayAddress) {
     $(IDS.SHEET_TITLE).textContent = displayAddress;
-    $(IDS.SHEET_TITLE).setAttribute('title', displayAddress);
+    $(IDS.SHEET_TITLE).setAttribute('title', rawAddress || displayAddress);
     const addrEl = $safe(IDS.SHEET_ADDRESS);
     if (addrEl) {
       addrEl.textContent = '';
@@ -118,6 +207,7 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
       if (displayAddress && displayAddress !== info.name) {
         addrEl.textContent = `📍 ${displayAddress}`;
         addrEl.removeAttribute('hidden');
+        wireAddressAction(addrEl, rawAddress || displayAddress);
       } else {
         addrEl.textContent = '';
         addrEl.setAttribute('hidden', '');
@@ -125,14 +215,22 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     }
   }
 
-  $(IDS.SHEET_SUBTITLE).textContent = info.subtitle;
+  // Check if narrative is just a short 1-line Wikidata fragment (< 45 chars without sentence punctuation)
+  const plainDesc = (info.descriptionHtml || '').replace(/<[^>]*>/g, '').trim();
+  const isTrivialFragment = Boolean(plainDesc && plainDesc.length < 45 && !/[.!?]$/.test(plainDesc));
+
+  if (isTrivialFragment && !info.subtitle.toLowerCase().includes(plainDesc.toLowerCase())) {
+    $(IDS.SHEET_SUBTITLE).textContent = `${info.subtitle} • ${plainDesc}`;
+  } else {
+    $(IDS.SHEET_SUBTITLE).textContent = info.subtitle;
+  }
 
   const sections: string[] = [];
 
   // Hero image
   if (info.thumbnail) {
     sections.push(
-      `<div class="sheet-hero-img-wrap"><img class="sheet-hero-img" src="${esc(info.thumbnail)}" alt="${esc(info.name)}" /></div>`,
+      `<div class="sheet-hero-img-wrap" role="button" tabindex="0" title="Tap to toggle full photo"><img class="sheet-hero-img" src="${esc(info.thumbnail)}" alt="${esc(info.name)}" /></div>`,
     );
   }
 
@@ -174,12 +272,13 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
   }
 
   const constructionDate = info.wikidata?.inceptionDate ?? info.osm?.startDate;
+  const inceptionLabel = inferInceptionLabel(info);
   if (constructionDate) {
     cards.push(`
       <div class="fact-card">
         <div class="fact-icon">📅</div>
         <div class="fact-body">
-          <div class="fact-label">Date of Construction</div>
+          <div class="fact-label">${esc(inceptionLabel)}</div>
           <div class="fact-val">${esc(constructionDate)}</div>
         </div>
       </div>
@@ -274,26 +373,47 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     sections.push(`<div class="facts-grid">${cards.join('')}</div>`);
   }
 
-  // Interesting Facts Section
+  // Interesting Facts Section:
+  // - Shown in full when .facts-grid is empty
+  // - When inspecting a building housing an organization (e.g. Latvijas Radio building) or when a separate
+  //   buildingConstructionDate exists, explicitly mention the date of building construction as an interesting fact
   const factsList = info.wikidata?.interestingFacts ?? [];
-  if (factsList.length > 0) {
+  const buildingConstructionDate =
+    info.wikidata?.buildingConstructionDate ??
+    (info.isBuilding && inceptionLabel === 'Established'
+      ? (info.osm?.startDate ?? info.wikidata?.inceptionDate)
+      : undefined);
+
+  let visibleFacts: string[] = [];
+  if (cards.length === 0) {
+    visibleFacts = factsList;
+  } else if (buildingConstructionDate) {
+    const existingBuildingFact = factsList.find(f =>
+      /building.*constructed|constructed in/i.test(f) && f.includes(buildingConstructionDate),
+    );
+    visibleFacts = [
+      existingBuildingFact ?? `The building was constructed in ${buildingConstructionDate}.`,
+    ];
+  }
+
+  if (visibleFacts.length > 0) {
     sections.push(`
       <div class="facts-section-box">
         <div class="facts-section-title">
           <span class="facts-sparkle">✨</span> Interesting Facts & Highlights
         </div>
         <ul class="facts-list">
-          ${factsList.map(fact => `<li class="fact-bullet-item"><span class="bullet-dot">•</span><span class="bullet-text">${esc(fact)}</span></li>`).join('')}
+          ${visibleFacts.map(fact => `<li class="fact-bullet-item"><span class="bullet-dot">•</span><span class="bullet-text">${esc(fact)}</span></li>`).join('')}
         </ul>
       </div>
     `);
   }
 
-  // Narrative / Wikipedia / Description
-  if (info.descriptionHtml) {
+  // Narrative / Wikipedia / Description (suppressed if it was just a trivial <45 char label promoted to subtitle)
+  if (info.descriptionHtml && !isTrivialFragment) {
     sections.push(`
       <div class="sheet-narrative-section">
-        <div class="sheet-narrative-text">${info.descriptionHtml}</div>
+        <div class="sheet-narrative-text">${formatNarrativeHtml(info.descriptionHtml)}</div>
       </div>
     `);
   }
@@ -344,53 +464,59 @@ export function renderEnrichedPlace(info: EnrichedPlaceInfo): void {
     `);
   }
 
-  // Street Information Section (shown at bottom in a separate block when card is showing building info & street info exists)
+  // Street Information Section (only rendered when there is a meaningful description >= 40 chars or a thumbnail)
   if (info.streetInfo) {
     const street = info.streetInfo;
-    const streetBlocks: string[] = [];
+    const streetPlain = (street.rawDescription || street.descriptionHtml?.replace(/<[^>]*>/g, '') || '').trim();
+    const hasMeaningfulStreetContent = Boolean(street.thumbnail) || streetPlain.length >= 40;
 
-    const cleanSub = street.subtitle ? street.subtitle.replace(/^🛣️\s*/, '').trim().toLowerCase() : '';
-    const cleanDesc = street.rawDescription ? street.rawDescription.trim().toLowerCase() : '';
-    const isSubDuplicate = cleanSub && cleanDesc && (cleanSub === cleanDesc || cleanDesc.startsWith(cleanSub));
-    const showSubtitle = street.subtitle && !isSubDuplicate;
+    if (hasMeaningfulStreetContent) {
+      const streetBlocks: string[] = [];
 
-    streetBlocks.push(`
-      <div class="sheet-street-block">
-        <div class="street-block-header">
-          <span class="street-block-badge">🛣️ Street Guide</span>
-          <h3 class="street-block-title">${esc(street.name)}</h3>
-          ${showSubtitle ? `<div class="street-block-sub">${esc(street.subtitle!)}</div>` : ''}
-        </div>
-    `);
+      const displaySubtitle = street.subtitle ? street.subtitle.replace(/^🛣️\s*/, '').trim() : '';
+      const cleanSub = displaySubtitle.toLowerCase();
+      const cleanDesc = streetPlain.toLowerCase();
+      const isSubDuplicate = cleanSub && cleanDesc && (cleanSub === cleanDesc || cleanDesc.startsWith(cleanSub));
+      const showSubtitle = Boolean(displaySubtitle && !isSubDuplicate);
 
-    if (street.thumbnail) {
       streetBlocks.push(`
-        <div class="street-hero-img-wrap">
-          <img class="street-hero-img" src="${esc(street.thumbnail)}" alt="${esc(street.name)}" />
-        </div>
+        <div class="sheet-street-block">
+          <div class="street-block-header">
+            <span class="street-block-badge">🛣️ Street Guide</span>
+            <h3 class="street-block-title">${esc(street.name)}</h3>
+            ${showSubtitle ? `<div class="street-block-sub">${esc(displaySubtitle)}</div>` : ''}
+          </div>
       `);
-    }
 
-    if (street.descriptionHtml) {
-      streetBlocks.push(`
-        <div class="street-desc-text">
-          ${street.descriptionHtml}
-        </div>
-      `);
-    }
+      if (street.thumbnail) {
+        streetBlocks.push(`
+          <div class="street-hero-img-wrap">
+            <img class="street-hero-img" src="${esc(street.thumbnail)}" alt="${esc(street.name)}" />
+          </div>
+        `);
+      }
 
-    if (street.wikipediaUrl) {
-      streetBlocks.push(`
-        <div class="street-action-row">
-          <a href="${esc(street.wikipediaUrl)}" target="_blank" rel="noopener" class="street-link-btn">
-            <span>📖</span> Explore ${esc(street.name)} on Wikipedia ↗
-          </a>
-        </div>
-      `);
-    }
+      if (street.descriptionHtml) {
+        streetBlocks.push(`
+          <div class="street-desc-text">
+            ${formatNarrativeHtml(street.descriptionHtml)}
+          </div>
+        `);
+      }
 
-    streetBlocks.push(`</div>`);
-    sections.push(streetBlocks.join(''));
+      if (street.wikipediaUrl) {
+        streetBlocks.push(`
+          <div class="street-action-row">
+            <a href="${esc(street.wikipediaUrl)}" target="_blank" rel="noopener" class="street-link-btn">
+              <span>📖</span> Explore ${esc(street.name)} on Wikipedia ↗
+            </a>
+          </div>
+        `);
+      }
+
+      streetBlocks.push(`</div>`);
+      sections.push(streetBlocks.join(''));
+    }
   }
 
   const descEl = $(IDS.SHEET_DESC);
@@ -410,7 +536,7 @@ export function renderError(message: string): void {
   showEl(IDS.SHEET_DESC);
 }
 
-// ── Term tapping ───────────────────────────────────────
+// ── Term tapping & Interactive Elements ────────────────
 
 export function wireTerms(): void {
   const descEl = $safe(IDS.SHEET_DESC);
@@ -427,6 +553,37 @@ export function wireTerms(): void {
     fresh.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') exploreTerm(term);
     });
+  });
+
+  // Wire collapsible "Read more ▾" narrative toggle
+  descEl.querySelectorAll<HTMLButtonElement>('.narrative-toggle-btn').forEach(btn => {
+    btn.onclick = () => {
+      const moreEl = btn.previousElementSibling as HTMLElement | null;
+      if (!moreEl) return;
+      const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+      if (isExpanded) {
+        moreEl.setAttribute('hidden', '');
+        btn.setAttribute('aria-expanded', 'false');
+        btn.textContent = 'Read more ▾';
+      } else {
+        moreEl.removeAttribute('hidden');
+        btn.setAttribute('aria-expanded', 'true');
+        btn.textContent = 'Show less ▴';
+      }
+    };
+  });
+
+  // Wire Hero image tap-to-expand toggle
+  descEl.querySelectorAll<HTMLElement>('.sheet-hero-img-wrap').forEach(wrap => {
+    wrap.onclick = () => {
+      wrap.classList.toggle('expanded');
+    };
+    wrap.onkeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        wrap.classList.toggle('expanded');
+      }
+    };
   });
 }
 
@@ -445,6 +602,12 @@ export function exploreTerm(term: string): void {
   };
 
   store.update({ history: [...store.get().history, entry] });
+
+  try {
+    window.history.pushState({ tellmeTerm: term }, '', window.location.hash || '#');
+  } catch {
+    // Ignore history state restrictions in test/sandboxed environments
+  }
 
   $(IDS.SHEET_TITLE).textContent    = term;
   $(IDS.SHEET_SUBTITLE).textContent = '🔍 exploring concept';
@@ -469,21 +632,16 @@ export function registerExploreCallback(fn: (term: string) => void): void {
   onExploreTerm = fn;
 }
 
-export function goBack(): void {
-  const history = [...store.get().history];
-  const prev    = history.pop();
-  if (!prev) return;
-
-  store.update({ history });
-
-  $(IDS.SHEET_TITLE).textContent    = prev.title;
-  $(IDS.SHEET_SUBTITLE).textContent = prev.subtitle;
+function restoreHistoryEntry(entry: HistoryEntry): void {
+  $(IDS.SHEET_TITLE).textContent    = entry.title;
+  $(IDS.SHEET_SUBTITLE).textContent = entry.subtitle;
 
   const addrEl = $safe(IDS.SHEET_ADDRESS);
   if (addrEl) {
-    if (prev.address) {
-      addrEl.textContent = `📍 ${prev.address}`;
+    if (entry.address) {
+      addrEl.textContent = `📍 ${entry.address}`;
       addrEl.removeAttribute('hidden');
+      wireAddressAction(addrEl, entry.address);
     } else {
       addrEl.textContent = '';
       addrEl.setAttribute('hidden', '');
@@ -491,13 +649,31 @@ export function goBack(): void {
   }
 
   const descEl = $(IDS.SHEET_DESC);
-  descEl.innerHTML = prev.html;
+  descEl.innerHTML = entry.html;
   showEl(IDS.SHEET_DESC);
   hideEl(IDS.SHEET_LOADING);
 
   wireTerms();
   updateBack();
   updateBreadcrumb();
+}
+
+export function goBack(): void {
+  const history = [...store.get().history];
+  const prev    = history.pop();
+  if (!prev) return;
+
+  store.update({ history });
+  restoreHistoryEntry(prev);
+}
+
+export function jumpToHistory(index: number): void {
+  const history = [...store.get().history];
+  const target  = history[index];
+  if (!target) return;
+
+  store.update({ history: history.slice(0, index) });
+  restoreHistoryEntry(target);
 }
 
 // ── Header controls ────────────────────────────────────
@@ -519,9 +695,16 @@ function updateBreadcrumb(): void {
   bc.removeAttribute('hidden');
   bc.innerHTML = history
     .map((h, i) =>
-      `<span class="${i === history.length - 1 ? CSS.BC_CURRENT : CSS.BC_ITEM}">${esc(h.title)}</span>`,
+      `<button type="button" class="${i === history.length - 1 ? CSS.BC_CURRENT : CSS.BC_ITEM}" data-bc-idx="${i}">${esc(h.title)}</button>`,
     )
     .join('');
+
+  bc.querySelectorAll<HTMLButtonElement>('[data-bc-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset['bcIdx']);
+      if (!Number.isNaN(idx)) jumpToHistory(idx);
+    });
+  });
 }
 
 // ── Swipe to close ─────────────────────────────────────

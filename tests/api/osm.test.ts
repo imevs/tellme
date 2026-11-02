@@ -4,6 +4,7 @@ import {
   parsePhotonResponse,
   formatOsmAddress,
   inferOsmEmoji,
+  mergeWithAddressPrimary,
 } from '../../src/api/osm';
 
 describe('OpenStreetMap API parser (src/api/osm.ts)', () => {
@@ -67,6 +68,40 @@ describe('OpenStreetMap API parser (src/api/osm.ts)', () => {
       expect(result?.osmId).toBe(999);
       expect(result?.osmType).toBe('node');
       expect(result?.wikidataId).toBeUndefined();
+    });
+
+    it('falls back to operator:wikidata and operator:wikipedia when direct wikidata tag is absent (e.g. Latvijas Radio building)', () => {
+      const raw = {
+        osm_id: 162177619,
+        osm_type: 'way',
+        lat: '56.94981',
+        lon: '24.10633',
+        category: 'amenity',
+        type: 'studio',
+        name: 'Latvijas Radio',
+        namedetails: {
+          name: 'Latvijas Radio',
+          'name:en': 'Radio Latvia',
+        },
+        address: {
+          house_number: '8',
+          road: 'Doma laukums',
+          suburb: 'Vecrīga',
+          city: 'Rīga',
+        },
+        extratags: {
+          building: 'office',
+          studio: 'radio',
+          'operator:wikidata': 'Q1807092',
+          'operator:wikipedia': 'lv:Latvijas Radio',
+        },
+      };
+
+      const result = parseNominatimResponse(raw, 56.94981, 24.10633);
+      expect(result).not.toBeNull();
+      expect(result?.name).toBe('Radio Latvia');
+      expect(result?.wikidataId).toBe('Q1807092');
+      expect(result?.wikipedia).toBe('lv:Latvijas Radio');
     });
 
     it('returns null for invalid or error responses', () => {
@@ -172,6 +207,44 @@ describe('OpenStreetMap API parser (src/api/osm.ts)', () => {
       expect(inferOsmEmoji('tourism', 'viewpoint')).toBe('🔭');
       expect(inferOsmEmoji('highway', 'bridge')).toBe('🌉');
       expect(inferOsmEmoji('building', 'yes')).toBe('🏢');
+    });
+  });
+
+  describe('mergeWithAddressPrimary', () => {
+    it('preserves named landmark when address inventory primary is a generic building way', () => {
+      const landmark = {
+        osmId: 10,
+        osmType: 'node' as const,
+        name: 'Riga Cathedral',
+        category: 'historic',
+        type: 'cathedral',
+        displayName: 'Riga Cathedral, 6 Herdera laukums',
+        address: { road: 'Herdera laukums', houseNumber: '6' },
+        tags: {},
+        wikidataId: 'Q1146288',
+        wikipedia: 'en:Riga Cathedral',
+        lat: 56.949,
+        lon: 24.104,
+      };
+
+      const genericBuilding = {
+        osmId: 20,
+        osmType: 'way' as const,
+        name: 'Map Object',
+        category: 'building',
+        type: 'yes',
+        displayName: '6, Herdera laukums',
+        address: { road: 'Herdera laukums', houseNumber: '6' },
+        tags: {},
+        startDate: '1211',
+        lat: 56.9491,
+        lon: 24.1041,
+      };
+
+      const merged = mergeWithAddressPrimary(landmark, genericBuilding);
+      expect(merged.name).toBe('Riga Cathedral');
+      expect(merged.wikidataId).toBe('Q1146288');
+      expect(merged.startDate).toBe('1211');
     });
   });
 });

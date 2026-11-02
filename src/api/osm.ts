@@ -56,10 +56,17 @@ export function parseNominatimResponse(
   const wikidataId =
     extratags['wikidata'] ??
     extratags['subject:wikidata'] ??
+    extratags['operator:wikidata'] ??
+    extratags['brand:wikidata'] ??
     extratags['architect:wikidata'] ??
     undefined;
 
-  const wikipedia = extratags['wikipedia'] ?? extratags['wikipedia:en'] ?? undefined;
+  const wikipedia =
+    extratags['wikipedia'] ??
+    extratags['wikipedia:en'] ??
+    extratags['operator:wikipedia'] ??
+    extratags['brand:wikipedia'] ??
+    undefined;
 
   const startDate =
     extratags['start_date'] ??
@@ -288,7 +295,66 @@ export async function fetchAddressInventory(
   }
 }
 
-// ── Network fetcher ────────────────────────────────────────
+/**
+ * Decides whether to promote the canonical building `primary` feature over the
+ * initially clicked `parsed` feature, ensuring named landmarks and Wikidata-linked
+ * monuments are never overwritten by generic building ways.
+ */
+export function mergeWithAddressPrimary(
+  parsed: OsmFeature,
+  primary?: OsmFeature | undefined,
+): OsmFeature {
+  if (!primary) return parsed;
+
+  const isParsedLandmark =
+    parsed.category === 'historic' ||
+    parsed.category === 'tourism' ||
+    Boolean(parsed.wikidataId) ||
+    Boolean(parsed.wikipedia);
+
+  const isPrimaryGeneric =
+    !primary.name ||
+    primary.name === 'Map Object' ||
+    /^(building|house|yes|residential|apartments|commercial|retail|office)$/i.test(primary.name.trim()) ||
+    /^\d+[a-z]?$/i.test(primary.name.trim());
+
+  // Never overwrite a named landmark or Wikidata-linked feature with an unnamed/generic building way
+  if (isParsedLandmark && isPrimaryGeneric && !primary.wikidataId) {
+    return {
+      ...parsed,
+      startDate: parsed.startDate ?? primary.startDate,
+    };
+  }
+
+  // If parsed already has a specific name and primary is generic, keep parsed's name & metadata
+  const isParsedGeneric =
+    !parsed.name ||
+    parsed.name === 'Map Object' ||
+    /^(building|house|yes|residential|apartments|commercial|retail|office)$/i.test(parsed.name.trim());
+
+  if (!isParsedGeneric && isPrimaryGeneric) {
+    return {
+      ...parsed,
+      wikidataId: parsed.wikidataId ?? primary.wikidataId,
+      wikipedia: parsed.wikipedia ?? primary.wikipedia,
+      startDate: parsed.startDate ?? primary.startDate,
+    };
+  }
+
+  if (parsed.osmType === 'node' || isParsedGeneric || parsed.name !== primary.name) {
+    return {
+      ...primary,
+      wikidataId: primary.wikidataId ?? parsed.wikidataId,
+      wikipedia: primary.wikipedia ?? parsed.wikipedia,
+      startDate: primary.startDate ?? parsed.startDate,
+      lat: parsed.lat,
+      lon: parsed.lon,
+    };
+  }
+
+  return parsed;
+}
+
 
 export async function fetchOsmObjectAt(
   lat: number,
@@ -333,14 +399,7 @@ export async function fetchOsmObjectAt(
             signal,
           ).catch(() => ({ primary: undefined, orgs: [] }));
 
-          let finalFeature = parsed;
-          if (inv.primary && (parsed.osmType === 'node' || !parsed.name || parsed.name !== inv.primary.name)) {
-            finalFeature = {
-              ...inv.primary,
-              lat: parsed.lat,
-              lon: parsed.lon,
-            };
-          }
+          const finalFeature = mergeWithAddressPrimary(parsed, inv.primary);
 
           const allOrgs = [...inv.orgs];
           if (parsed.name && parsed.name !== finalFeature.name) {

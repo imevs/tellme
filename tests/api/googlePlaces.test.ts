@@ -189,6 +189,59 @@ describe('Google Places API integration (src/api/googlePlaces.ts)', () => {
       expect(result).toHaveLength(1);
       expect(result[0]?.name).toBe('Miera Bakery');
     });
+
+    it('deduplicates primary place by name and websiteUri and filters out Google Places at unrelated streets', () => {
+      const result = resolvePlacesAtAddress({
+        address: '8 Doma laukums, Old Riga, Riga, Latvia',
+        primaryName: 'Radio Latvia',
+        primaryWebsiteUri: 'http://www.latvijasradio.lsm.lv/',
+        lat: 56.94981,
+        lon: 24.10633,
+        osm: {
+          osmId: 1,
+          osmType: 'node',
+          name: 'Radio Latvia',
+          category: 'amenity',
+          type: 'studio',
+          displayName: 'Radio Latvia, 8 Doma laukums',
+          address: {
+            road: 'Doma laukums',
+            houseNumber: '8',
+          },
+          tags: {},
+          lat: 56.94981,
+          lon: 24.10633,
+          addressOrganizations: [
+            { name: 'Radio Latvia', category: 'studio', source: 'osm' },
+          ],
+        },
+        googlePlaces: [
+          {
+            name: 'Latvian Radio (LR)',
+            category: 'Television studio',
+            formattedAddress: 'Doma laukums 8, Centra rajons, Rīga, LV-1050, Latvia',
+            websiteUri: 'https://latvijasradio.lsm.lv',
+            source: 'google',
+          },
+          {
+            name: 'Latvian Radio 5 - Pieci.lv',
+            category: 'Television studio',
+            formattedAddress: 'Doma laukums 8, Centra rajons, Rīga, LV-1050, Latvia',
+            websiteUri: 'http://www.pieci.lv/lv/lr5/',
+            source: 'google',
+          },
+          {
+            name: 'Latvian Television (LTV)',
+            category: 'Television studio',
+            formattedAddress: 'Zaķusalas krastmala 33, Zemgales priekšpilsēta, Rīga',
+            websiteUri: 'https://ltv.lsm.lv/',
+            source: 'google',
+          },
+        ],
+      });
+
+      expect(result.map(r => r.name)).toEqual(['Latvian Radio 5 - Pieci.lv']);
+    });
   });
 
   describe('Daily Quota and Rate Limiting', () => {

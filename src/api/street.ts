@@ -315,7 +315,7 @@ export async function fetchStreetInfo(
       const info: StreetInfo = {
         name: streetName,
         title: wikiResult.title,
-        subtitle: wdMatch?.description ? `🛣️ ${wdMatch.description}` : (city ? `🛣️ Street in ${city}` : '🛣️ Street Guide'),
+        subtitle: wdMatch?.description ? wdMatch.description : (city ? `Street in ${city}` : 'Street Guide'),
         descriptionHtml,
         rawDescription: wikiResult.description,
         thumbnail: wikiResult.thumbnail,
@@ -329,12 +329,12 @@ export async function fetchStreetInfo(
       return info;
     }
 
-    // 3. Fallback to Wikidata description if present and informative
-    if (wdMatch && wdMatch.description && wdMatch.description !== 'Street') {
+    // 3. Fallback to Wikidata description only if it is a meaningful narrative (> 60 chars)
+    if (wdMatch && wdMatch.description && wdMatch.description.trim().length > 60) {
       const info: StreetInfo = {
         name: streetName,
         title: wdMatch.label,
-        subtitle: city ? `🛣️ Street in ${city}` : '🛣️ Street Guide',
+        subtitle: city ? `Street in ${city}` : 'Street Guide',
         descriptionHtml: `<p>${wdMatch.description}</p>`,
         rawDescription: wdMatch.description,
         wikidataId: wdMatch.qid,

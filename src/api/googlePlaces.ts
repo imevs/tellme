@@ -290,12 +290,28 @@ export async function fetchGooglePlacesAtAddress(
 }
 
 
+function normalizeWebsite(uri?: string | undefined): string {
+  if (!uri) return '';
+  return uri
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '');
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Consolidates organizations/places at this address from Google Places,
  * nearby memory POIs, and OSM feature tags without using Overpass.
  */
 export function resolvePlacesAtAddress(options: {
   address?: string | undefined;
+  primaryName?: string | undefined;
+  primaryWebsiteUri?: string | undefined;
   lat?: number | undefined;
   lon?: number | undefined;
   osm?: OsmFeature | null | undefined;
@@ -304,14 +320,32 @@ export function resolvePlacesAtAddress(options: {
 }): AddressPlaceOrganization[] {
   const result: AddressPlaceOrganization[] = [];
   const seenNames = new Set<string>();
+  const seenWebsites = new Set<string>();
 
   const normAddress = options.address ? options.address.trim().toLowerCase() : '';
   const road = options.osm?.address?.road?.trim().toLowerCase() || '';
   const houseNum = options.osm?.address?.houseNumber?.trim().toLowerCase() || '';
+  const normPrimaryName = options.primaryName ? options.primaryName.trim().toLowerCase() : '';
+  const normPrimaryWeb = normalizeWebsite(options.primaryWebsiteUri);
+
+  if (normPrimaryName) seenNames.add(normPrimaryName);
+  if (normPrimaryWeb) seenWebsites.add(normPrimaryWeb);
+
+  const matchesInspectedAddress = (formattedAddr?: string | undefined): boolean => {
+    if (!formattedAddr || !road) return true;
+    const lowerAddr = formattedAddr.toLowerCase();
+    if (!lowerAddr.includes(road)) return false;
+    if (houseNum) {
+      const houseRegex = new RegExp(`\\b${escapeRegExp(houseNum)}\\b`, 'i');
+      if (!houseRegex.test(lowerAddr)) return false;
+    }
+    return true;
+  };
 
   const isSelfBuildingAddress = (name: string, category?: string | undefined): boolean => {
     const norm = name.trim().toLowerCase();
     if (!norm) return true;
+    if (normPrimaryName && norm === normPrimaryName) return true;
     if (normAddress && (norm === normAddress || normAddress.startsWith(norm) || norm.startsWith(normAddress))) {
       return true;
     }
@@ -333,7 +367,10 @@ export function resolvePlacesAtAddress(options: {
     const key = p.name.trim().toLowerCase();
     if (!key || seenNames.has(key)) return;
     if (isSelfBuildingAddress(p.name, p.category)) return;
+    const normWeb = normalizeWebsite(p.websiteUri);
+    if (normWeb && seenWebsites.has(normWeb)) return;
     seenNames.add(key);
+    if (normWeb) seenWebsites.add(normWeb);
     result.push(p);
   };
 
@@ -342,8 +379,9 @@ export function resolvePlacesAtAddress(options: {
     addIfUnique(org);
   }
 
-  // 1. Places from Google Places
+  // 1. Places from Google Places (only those matching the inspected street/house address)
   for (const gp of options.googlePlaces || []) {
+    if (!matchesInspectedAddress(gp.formattedAddress)) continue;
     addIfUnique(gp);
   }
 
