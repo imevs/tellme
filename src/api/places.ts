@@ -1,6 +1,7 @@
 import type { POI, OverpassTags } from '../types';
 import { WIKIPEDIA_API_ENDPOINT, MAX_POIS } from '../constants';
 import { haversineKm } from './overpass';
+import { apiFetch } from './http';
 
 // ── Category heuristics from Wikipedia title & description ──
 
@@ -131,7 +132,7 @@ export async function fetchNearbyPlaces(
 
   const url = `${WIKIPEDIA_API_ENDPOINT}?${params.toString()}`;
 
-  const res = await fetch(url, { signal: placesController.signal });
+  const res = await apiFetch(url, { signal: placesController.signal });
   if (!res.ok) {
     throw new Error(`Wikipedia error ${res.status}`);
   }

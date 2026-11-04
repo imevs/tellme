@@ -1,5 +1,6 @@
 import { WIKIDATA_API_ENDPOINT, WIKIPEDIA_API_ENDPOINT } from '../constants';
 import { cleanWikiExtract, extractMatchingTerms, normalizeDiacritics } from './wiki';
+import { apiFetch, isAbortError, throwIfAborted } from './http';
 import { highlightTerms } from '../ui/dom';
 import type { OsmFeature, StreetInfo } from '../types';
 
@@ -109,7 +110,7 @@ export async function searchWikidataStreet(
       limit: '7',
     });
 
-    const res = await fetch(`${WIKIDATA_API_ENDPOINT}?${params.toString()}`, signal ? { signal } : {});
+    const res = await apiFetch(`${WIKIDATA_API_ENDPOINT}?${params.toString()}`, signal ? { signal } : {});
     if (!res.ok) return null;
 
     const data = await res.json() as { search?: Array<{ id?: string; label?: string; description?: string }> };
@@ -147,7 +148,7 @@ export async function searchWikidataStreet(
         format: 'json',
         origin: '*',
       });
-      const getRes = await fetch(`${WIKIDATA_API_ENDPOINT}?${getParams.toString()}`, signal ? { signal } : {});
+      const getRes = await apiFetch(`${WIKIDATA_API_ENDPOINT}?${getParams.toString()}`, signal ? { signal } : {});
       if (getRes.ok) {
         const getData = await getRes.json() as {
           entities?: Record<string, { sitelinks?: { enwiki?: { title?: string } } }>;
@@ -197,7 +198,7 @@ export async function fetchStreetWikipedia(
         origin: '*',
       });
 
-      const res = await fetch(`${WIKIPEDIA_API_ENDPOINT}?${params.toString()}`, signal ? { signal } : {});
+      const res = await apiFetch(`${WIKIPEDIA_API_ENDPOINT}?${params.toString()}`, signal ? { signal } : {});
       if (!res.ok) continue;
 
       const data = await res.json() as {
@@ -251,7 +252,7 @@ export async function fetchStreetWikipedia(
       origin: '*',
     });
 
-    const res = await fetch(`${WIKIPEDIA_API_ENDPOINT}?${searchParams.toString()}`, signal ? { signal } : {});
+    const res = await apiFetch(`${WIKIPEDIA_API_ENDPOINT}?${searchParams.toString()}`, signal ? { signal } : {});
     if (res.ok) {
       const data = await res.json() as {
         query?: {
@@ -307,6 +308,7 @@ export async function fetchStreetInfo(
   try {
     // 1. Search Wikidata for entity & sitelink
     const wdMatch = await searchWikidataStreet(streetName, city, signal);
+    throwIfAborted(signal);
 
     // 2. Fetch Wikipedia using sitelink or street name
     const wikiResult = await fetchStreetWikipedia(
@@ -315,6 +317,7 @@ export async function fetchStreetInfo(
       wdMatch?.sitelink,
       signal,
     );
+    throwIfAborted(signal);
 
     if (wikiResult) {
       const terms = wikiResult.terms.length > 0 ? wikiResult.terms : [streetName];
@@ -357,7 +360,9 @@ export async function fetchStreetInfo(
     // No rich information found
     streetCache.set(cacheKey, null);
     return null;
-  } catch {
+  } catch (err) {
+    // Never cache a cancelled lookup as "no info" — rethrow so callers can ignore it
+    if (isAbortError(err)) throw err;
     streetCache.set(cacheKey, null);
     return null;
   }

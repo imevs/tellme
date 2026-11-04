@@ -4,12 +4,27 @@
 export const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
 export const NOMINATIM_SEARCH_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 export const PHOTON_REVERSE_ENDPOINT = 'https://photon.komoot.io/reverse';
-export const WIKIDATA_SPARQL_ENDPOINT = 'https://query.wikidata.org/sparql';
 export const WIKIDATA_API_ENDPOINT = 'https://www.wikidata.org/w/api.php';
 export const WIKIPEDIA_API_ENDPOINT = 'https://en.wikipedia.org/w/api.php';
-export const GOOGLE_PLACES_API_KEY = 'AIzaSyDy9nLQ54j6eWrI4nlOSwi5SGn81gRbOtI';
 export const GOOGLE_PLACES_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
 export const GOOGLE_PLACES_MAX_DAILY_CALLS = 40;
+
+// ── Secrets & deployment config (injected at build time, never committed) ──
+// Prefer GOOGLE_PLACES_PROXY_URL (server-side key). A browser key, if used, MUST be
+// restricted in Google Cloud Console (HTTP referrer + Places API only + quota).
+export const GOOGLE_PLACES_API_KEY: string = import.meta.env.VITE_GOOGLE_PLACES_API_KEY ?? '';
+export const GOOGLE_PLACES_PROXY_URL: string = import.meta.env.VITE_GOOGLE_PLACES_PROXY_URL ?? '';
+/** Optional valid contact e-mail sent to Nominatim (usage policy recommends it for heavy use). */
+export const NOMINATIM_CONTACT_EMAIL: string = import.meta.env.VITE_NOMINATIM_EMAIL ?? '';
+
+// ── API etiquette ──────────────────────────────────────
+/** Sent as `Api-User-Agent` to Wikimedia APIs (browsers cannot override User-Agent). */
+export const APP_USER_AGENT = 'TellMe/1.0 (https://github.com/imevs/tellme; tap-to-explore travel web app)';
+/** Minimum spacing between consecutive requests per host (Nominatim policy: ≤ 1 req/s). */
+export const HOST_MIN_INTERVAL_MS: Readonly<Record<string, number>> = {
+  'nominatim.openstreetmap.org': 1000,
+  'photon.komoot.io': 250,
+};
 
 // ── Map defaults ───────────────────────────────────────
 export const DEFAULT_CENTER: [number, number] = [48.8566, 2.3522]; // Paris

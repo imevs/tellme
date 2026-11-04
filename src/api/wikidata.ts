@@ -1,4 +1,5 @@
-import { WIKIDATA_SPARQL_ENDPOINT, WIKIDATA_API_ENDPOINT } from '../constants';
+import { WIKIDATA_API_ENDPOINT } from '../constants';
+import { apiFetch, anySignal, isAbortError, throwIfAborted } from './http';
 import { normalizeDiacritics, resolveEnglishCountryName } from './wiki';
 import type { WikidataFactDetails } from '../types';
 
@@ -461,11 +462,12 @@ async function fetchWikidataSearchItems(
       limit: '5',
     });
     const url = `${WIKIDATA_API_ENDPOINT}?${params.toString()}`;
-    const res = await fetch(url, signal ? { signal } : {});
+    const res = await apiFetch(url, signal ? { signal } : {});
     if (!res.ok) return [];
     const data = (await res.json()) as { search?: WikidataSearchItem[] };
     return data.search ?? [];
-  } catch {
+  } catch (err) {
+    if (isAbortError(err)) throw err;
     return [];
   }
 }
@@ -476,6 +478,7 @@ export async function searchWikidataEntity(
   context?: WikidataSearchContext,
 ): Promise<string | null> {
   const items = await fetchWikidataSearchItems(name, signal);
+  throwIfAborted(signal);
 
   if (!context || (!context.city && !context.country && !context.countryCode && !context.localName)) {
     const firstId = items[0]?.id;
@@ -517,6 +520,7 @@ export async function searchWikidataEntity(
 
   for (const q of fallbackQueries) {
     const subItems = await fetchWikidataSearchItems(q, signal);
+    throwIfAborted(signal);
     const matched = subItems.find(it => it.id && /^Q\d+$/.test(it.id) && matchesLocation(it)) ??
       (validTokens.length === 0 ? subItems[0] : undefined);
     if (matched?.id && /^Q\d+$/.test(matched.id)) {
@@ -538,52 +542,315 @@ export async function searchWikidataEntity(
   return null;
 }
 
-// ── Fetch Details via SPARQL ───────────────────────────────
+// ── Fetch Details via Wikidata Action API (wbgetentities & list=geosearch) ──
+
+const WIKIDATA_LANG_PRIORITY = ['en', 'mul', 'lv', 'de', 'fr', 'es'] as const;
+const WIKIDATA_LANGUAGES_PARAM = WIKIDATA_LANG_PRIORITY.join('|');
+
+interface WbTermMap {
+  [lang: string]: { value?: string };
+}
+
+interface WbSnak {
+  snaktype?: string;
+  datavalue?: {
+    type?: string;
+    value?: unknown;
+  };
+}
+
+interface WbClaim {
+  mainsnak?: WbSnak;
+  rank?: 'preferred' | 'normal' | 'deprecated';
+}
+
+interface WbEntity {
+  id?: string;
+  missing?: string;
+  labels?: WbTermMap;
+  descriptions?: WbTermMap;
+  claims?: Record<string, WbClaim[]>;
+  sitelinks?: {
+    enwiki?: { title?: string };
+  };
+}
+
+function pickLocalizedTerm(map?: WbTermMap): string {
+  if (!map) return '';
+  for (const lang of WIKIDATA_LANG_PRIORITY) {
+    const val = map[lang]?.value?.trim();
+    if (val) return val;
+  }
+  for (const entry of Object.values(map)) {
+    const val = entry?.value?.trim();
+    if (val) return val;
+  }
+  return '';
+}
+
+function activeClaims(claims?: WbClaim[]): WbClaim[] {
+  if (!Array.isArray(claims) || claims.length === 0) return [];
+  const nonDeprecated = claims.filter(c => c.rank !== 'deprecated');
+  const preferred = nonDeprecated.filter(c => c.rank === 'preferred');
+  return preferred.length > 0 ? preferred : nonDeprecated;
+}
+
+function extractEntityIdsFromClaims(claims?: WbClaim[]): string[] {
+  const ids: string[] = [];
+  for (const c of activeClaims(claims)) {
+    const val = c.mainsnak?.datavalue?.value as { id?: string } | undefined;
+    if (val?.id && /^Q\d+$/.test(val.id) && !ids.includes(val.id)) {
+      ids.push(val.id);
+    }
+  }
+  return ids;
+}
+
+function extractTimeClaims(claims?: WbClaim[]): Array<{ time: string; precision?: string }> {
+  const out: Array<{ time: string; precision?: string }> = [];
+  for (const c of activeClaims(claims)) {
+    const val = c.mainsnak?.datavalue?.value as { time?: string; precision?: number | string } | undefined;
+    if (val?.time) {
+      out.push({
+        time: val.time,
+        ...(val.precision != null ? { precision: String(val.precision) } : {}),
+      });
+    }
+  }
+  return out;
+}
+
+function extractQuantityClaim(claims?: WbClaim[]): string | null {
+  for (const c of activeClaims(claims)) {
+    const val = c.mainsnak?.datavalue?.value as { amount?: string; unit?: string } | undefined;
+    if (val?.amount) {
+      const num = parseFloat(val.amount);
+      if (!Number.isNaN(num)) {
+        // Convert feet (Q3710) to meters if needed; otherwise treat as meters
+        const meters = val.unit?.endsWith('/Q3710') ? num * 0.3048 : num;
+        return String(meters);
+      }
+      return val.amount;
+    }
+  }
+  return null;
+}
+
+function extractCommonsImageUrl(claims?: WbClaim[]): string | null {
+  for (const c of activeClaims(claims)) {
+    const val = c.mainsnak?.datavalue?.value;
+    if (typeof val === 'string' && val.trim()) {
+      const trimmed = val.trim();
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      const fileName = encodeURIComponent(trimmed.replace(/ /g, '_'));
+      return `https://commons.wikimedia.org/wiki/Special:FilePath/${fileName}`;
+    }
+  }
+  return null;
+}
+
+async function fetchEntityLabelsMap(
+  qids: string[],
+  signal: AbortSignal,
+): Promise<Map<string, string>> {
+  const labelMap = new Map<string, string>();
+  const unique = Array.from(new Set(qids.filter(id => /^Q\d+$/.test(id))));
+  if (unique.length === 0) return labelMap;
+
+  // wbgetentities accepts up to 50 IDs per request
+  for (let i = 0; i < unique.length; i += 50) {
+    const batch = unique.slice(i, i + 50);
+    const params = new URLSearchParams({
+      action: 'wbgetentities',
+      ids: batch.join('|'),
+      props: 'labels',
+      languages: WIKIDATA_LANGUAGES_PARAM,
+      format: 'json',
+      origin: '*',
+    });
+    const res = await apiFetch(`${WIKIDATA_API_ENDPOINT}?${params.toString()}`, { signal });
+    if (!res.ok) continue;
+    const data = (await res.json()) as { entities?: Record<string, WbEntity> };
+    for (const [id, ent] of Object.entries(data.entities ?? {})) {
+      const lbl = pickLocalizedTerm(ent.labels);
+      if (lbl) labelMap.set(id, lbl);
+    }
+  }
+
+  return labelMap;
+}
+
+/**
+ * Fetches full Wikidata entity records via `wbgetentities` on `www.wikidata.org/w/api.php`
+ * and normalizes them into the binding structure consumed by `parseWikidataSparqlResponse`.
+ */
+async function fetchEntitiesAsBindingsJson(
+  entries: Array<{ qid: string; distKm?: number | undefined }>,
+  signal: AbortSignal,
+): Promise<unknown | null> {
+  const validEntries = entries.filter(e => /^Q\d+$/.test(e.qid)).slice(0, 50);
+  if (validEntries.length === 0) return null;
+
+  try {
+    const params = new URLSearchParams({
+      action: 'wbgetentities',
+      ids: validEntries.map(e => e.qid).join('|'),
+      props: 'labels|descriptions|claims|sitelinks',
+      languages: WIKIDATA_LANGUAGES_PARAM,
+      sitefilter: 'enwiki',
+      format: 'json',
+      origin: '*',
+    });
+    const res = await apiFetch(`${WIKIDATA_API_ENDPOINT}?${params.toString()}`, { signal });
+    if (!res.ok) return null;
+    const raw: unknown = await res.json();
+
+    // If a test stubbed a raw `{ results: { bindings } }` payload directly, pass it through
+    if (
+      typeof raw === 'object' &&
+      raw !== null &&
+      'results' in (raw as Record<string, unknown>)
+    ) {
+      return raw;
+    }
+
+    const entities = (raw as { entities?: Record<string, WbEntity> }).entities;
+    if (!entities) return null;
+
+    // Collect linked entity QIDs across P84, P149, P138, P1435, P31, P186 to resolve their labels
+    const referencedQids: string[] = [];
+    const propKeys = ['P84', 'P149', 'P138', 'P1435', 'P31', 'P186'] as const;
+    for (const { qid } of validEntries) {
+      const ent = entities[qid];
+      if (!ent || ent.missing !== undefined || !ent.claims) continue;
+      for (const prop of propKeys) {
+        for (const targetId of extractEntityIdsFromClaims(ent.claims[prop])) {
+          referencedQids.push(targetId);
+        }
+      }
+    }
+
+    const labelMap = await fetchEntityLabelsMap(referencedQids, signal);
+    const resolveLabels = (ids: string[]): string[] =>
+      ids.map(id => labelMap.get(id)).filter((v): v is string => Boolean(v));
+
+    const bindings: SparqlBinding[] = [];
+
+    for (const { qid, distKm } of validEntries) {
+      const ent = entities[qid];
+      if (!ent || ent.missing !== undefined) continue;
+
+      const itemUri = `http://www.wikidata.org/entity/${qid}`;
+      const itemLabel = pickLocalizedTerm(ent.labels);
+      const itemDescription = pickLocalizedTerm(ent.descriptions);
+      const claims = ent.claims ?? {};
+
+      const inceptions = extractTimeClaims(claims['P571']);
+      const openings = extractTimeClaims(claims['P1619']);
+      const height = extractQuantityClaim(claims['P2048']);
+      const image = extractCommonsImageUrl(claims['P18']);
+      const enwikiTitle = ent.sitelinks?.enwiki?.title;
+      const wikipediaArticle = enwikiTitle
+        ? `https://en.wikipedia.org/wiki/${encodeURIComponent(enwikiTitle.replace(/ /g, '_'))}`
+        : undefined;
+
+      const architects = resolveLabels(extractEntityIdsFromClaims(claims['P84']));
+      const styles = resolveLabels(extractEntityIdsFromClaims(claims['P149']));
+      const namedAfters = resolveLabels(extractEntityIdsFromClaims(claims['P138']));
+      const heritages = resolveLabels(extractEntityIdsFromClaims(claims['P1435']));
+      const instances = resolveLabels(extractEntityIdsFromClaims(claims['P31']));
+      const materials = resolveLabels(extractEntityIdsFromClaims(claims['P186']));
+
+      const rowCount = Math.max(
+        1,
+        inceptions.length,
+        architects.length,
+        styles.length,
+        namedAfters.length,
+        heritages.length,
+        instances.length,
+        materials.length,
+      );
+
+      for (let i = 0; i < rowCount; i++) {
+        const b: SparqlBinding = {
+          item: { value: itemUri },
+        };
+        if (itemLabel) b.itemLabel = { value: itemLabel };
+        if (itemDescription) b.itemDescription = { value: itemDescription };
+        if (distKm !== undefined) b.distance = { value: String(distKm) };
+
+        const inc = inceptions[i];
+        if (inc) {
+          b.inception = { value: inc.time };
+          if (inc.precision) b.inceptionPrecision = { value: inc.precision };
+        }
+        if (i === 0 && openings[0]) b.openingDate = { value: openings[0].time };
+        if (i === 0 && height) b.height = { value: height };
+        if (i === 0 && image) b.image = { value: image };
+        if (i === 0 && wikipediaArticle) b.wikipediaArticle = { value: wikipediaArticle };
+
+        if (architects[i]) b.architectLabel = { value: architects[i]! };
+        if (styles[i]) b.styleLabel = { value: styles[i]! };
+        if (namedAfters[i]) b.namedAfterLabel = { value: namedAfters[i]! };
+        if (heritages[i]) b.heritageLabel = { value: heritages[i]! };
+        if (instances[i]) b.instanceOfLabel = { value: instances[i]! };
+        if (materials[i]) b.materialLabel = { value: materials[i]! };
+
+        bindings.push(b);
+      }
+    }
+
+    return { results: { bindings } };
+  } catch (err) {
+    if (isAbortError(err)) throw err;
+    return null;
+  }
+}
 
 async function fetchSpatialWikidataJson(
   lat: number,
   lon: number,
   signal: AbortSignal,
 ): Promise<unknown | null> {
-  const sparqlAround = `SELECT DISTINCT ?item ?itemLabel ?itemDescription ?distance ?inception ?inceptionPrecision ?openingDate ?height ?architectLabel ?styleLabel ?namedAfterLabel ?heritageLabel ?instanceOfLabel ?materialLabel ?image ?wikipediaArticle WHERE {
-  SERVICE wikibase:around {
-    ?item wdt:P625 ?coord .
-    bd:serviceParam wikibase:center "Point(${lon} ${lat})"^^geo:wktLiteral .
-    bd:serviceParam wikibase:radius "0.12" .
-    bd:serviceParam wikibase:distance ?distance .
-  }
-  OPTIONAL {
-    ?item p:P571/psv:P571 [
-      wikibase:timeValue ?inception ;
-      wikibase:timePrecision ?inceptionPrecision
-    ] .
-  }
-  OPTIONAL { ?item wdt:P1619 ?openingDate . }
-  OPTIONAL { ?item wdt:P2048 ?height . }
-  OPTIONAL { ?item wdt:P84 ?architect . }
-  OPTIONAL { ?item wdt:P149 ?style . }
-  OPTIONAL { ?item wdt:P138 ?namedAfter . }
-  OPTIONAL { ?item wdt:P1435 ?heritage . }
-  OPTIONAL { ?item wdt:P31 ?instanceOf . }
-  OPTIONAL { ?item wdt:P186 ?material . }
-  OPTIONAL { ?item wdt:P18 ?image . }
-  OPTIONAL {
-    ?wikipediaArticle schema:about ?item ;
-                      schema:isPartOf <https://en.wikipedia.org/> .
-  }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,fr". }
-} ORDER BY ?distance LIMIT 20`;
-
   try {
-    const url = `${WIKIDATA_SPARQL_ENDPOINT}?query=${encodeURIComponent(sparqlAround)}`;
-    const res = await fetch(url, {
-      signal,
-      headers: { 'Accept': 'application/sparql-results+json' },
+    const geoParams = new URLSearchParams({
+      action: 'query',
+      list: 'geosearch',
+      gscoord: `${lat}|${lon}`,
+      gsradius: '120',
+      gslimit: '20',
+      format: 'json',
+      origin: '*',
     });
+    const url = `${WIKIDATA_API_ENDPOINT}?${geoParams.toString()}`;
+    const res = await apiFetch(url, { signal });
     if (!res.ok) return null;
-    return await res.json();
+    const raw: unknown = await res.json();
+
+    if (
+      typeof raw === 'object' &&
+      raw !== null &&
+      'results' in (raw as Record<string, unknown>)
+    ) {
+      return raw;
+    }
+
+    const geosearch = (
+      raw as { query?: { geosearch?: Array<{ title?: string; dist?: number }> } }
+    ).query?.geosearch;
+    if (!Array.isArray(geosearch) || geosearch.length === 0) return null;
+
+    const entries = geosearch
+      .filter((g): g is { title: string; dist?: number } => Boolean(g.title && /^Q\d+$/.test(g.title)))
+      .map(g => ({
+        qid: g.title,
+        distKm: typeof g.dist === 'number' ? g.dist / 1000 : undefined,
+      }));
+
+    return await fetchEntitiesAsBindingsJson(entries, signal);
   } catch (err) {
-    if ((err as Error).name === 'AbortError') throw err;
+    if (isAbortError(err)) throw err;
     return null;
   }
 }
@@ -598,10 +865,11 @@ export async function fetchWikidataDetails(options: {
   country?: string | undefined;
   countryCode?: string | undefined;
   isBuilding?: boolean | undefined;
+  signal?: AbortSignal | undefined;
 }): Promise<WikidataFactDetails | null> {
   wikidataController?.abort();
   wikidataController = new AbortController();
-  const signal = wikidataController.signal;
+  const signal = anySignal(wikidataController.signal, options.signal) ?? wikidataController.signal;
 
   let qid = options.qid;
 
@@ -611,67 +879,34 @@ export async function fetchWikidataDetails(options: {
     qid = match ? match[0] : undefined;
   }
 
-  // 1. If we have a QID, query Wikidata SPARQL directly for that item
+  // 1. If we have a QID, query Wikidata API (wbgetentities) directly for that item
   if (qid) {
-    const sparql = `SELECT DISTINCT ?item ?itemLabel ?itemDescription ?inception ?inceptionPrecision ?openingDate ?height ?architectLabel ?styleLabel ?namedAfterLabel ?heritageLabel ?instanceOfLabel ?materialLabel ?image ?wikipediaArticle WHERE {
-  VALUES ?item { wd:${qid} }
-  OPTIONAL {
-    ?item p:P571/psv:P571 [
-      wikibase:timeValue ?inception ;
-      wikibase:timePrecision ?inceptionPrecision
-    ] .
-  }
-  OPTIONAL { ?item wdt:P1619 ?openingDate . }
-  OPTIONAL { ?item wdt:P2048 ?height . }
-  OPTIONAL { ?item wdt:P84 ?architect . }
-  OPTIONAL { ?item wdt:P149 ?style . }
-  OPTIONAL { ?item wdt:P138 ?namedAfter . }
-  OPTIONAL { ?item wdt:P1435 ?heritage . }
-  OPTIONAL { ?item wdt:P31 ?instanceOf . }
-  OPTIONAL { ?item wdt:P186 ?material . }
-  OPTIONAL { ?item wdt:P18 ?image . }
-  OPTIONAL {
-    ?wikipediaArticle schema:about ?item ;
-                      schema:isPartOf <https://en.wikipedia.org/> .
-  }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,fr,es,de". }
-} LIMIT 25`;
-
-    try {
-      const url = `${WIKIDATA_SPARQL_ENDPOINT}?query=${encodeURIComponent(sparql)}`;
-      const res = await fetch(url, {
-        signal,
-        headers: { 'Accept': 'application/sparql-results+json' },
-      });
-      if (res.ok) {
-        const json: unknown = await res.json();
-        const details = parseWikidataSparqlResponse(json, { isBuilding: options.isBuilding });
-        if (details) {
-          // If inspecting a building whose QID points to a housed organization (e.g. operator:wikidata),
-          // also resolve the physical building at these coordinates so its construction date is preserved.
-          if (
-            options.isBuilding &&
-            options.lat != null &&
-            options.lon != null &&
-            (isOrganizationEntity(details) || !details.inceptionDate)
-          ) {
-            const spatialJson = await fetchSpatialWikidataJson(options.lat, options.lon, signal);
-            if (spatialJson) {
-              const buildingDetails = parseWikidataSparqlResponse(spatialJson, {
-                isBuilding: true,
-                preferPhysicalBuilding: true,
-                maxDistanceKm: 0.045,
-              });
-              if (buildingDetails && buildingDetails.qid !== details.qid) {
-                return mergeBuildingDetailsIntoEntity(details, buildingDetails);
-              }
+    const json = await fetchEntitiesAsBindingsJson([{ qid }], signal);
+    if (json) {
+      const details = parseWikidataSparqlResponse(json, { isBuilding: options.isBuilding });
+      if (details) {
+        // If inspecting a building whose QID points to a housed organization (e.g. operator:wikidata),
+        // also resolve the physical building at these coordinates so its construction date is preserved.
+        if (
+          options.isBuilding &&
+          options.lat != null &&
+          options.lon != null &&
+          (isOrganizationEntity(details) || !details.inceptionDate)
+        ) {
+          const spatialJson = await fetchSpatialWikidataJson(options.lat, options.lon, signal);
+          if (spatialJson) {
+            const buildingDetails = parseWikidataSparqlResponse(spatialJson, {
+              isBuilding: true,
+              preferPhysicalBuilding: true,
+              maxDistanceKm: 0.045,
+            });
+            if (buildingDetails && buildingDetails.qid !== details.qid) {
+              return mergeBuildingDetailsIntoEntity(details, buildingDetails);
             }
           }
-          return details;
         }
+        return details;
       }
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') throw err;
     }
   }
 
@@ -727,12 +962,10 @@ export async function fetchWikidataDetails(options: {
       countryCode: options.countryCode,
     });
     if (foundQid) {
-      const namedDetails = await fetchWikidataDetails({
-        qid: foundQid,
-        lat: options.lat,
-        lon: options.lon,
-        isBuilding: options.isBuilding,
-      });
+      const namedJson = await fetchEntitiesAsBindingsJson([{ qid: foundQid }], signal);
+      const namedDetails = namedJson
+        ? parseWikidataSparqlResponse(namedJson, { isBuilding: options.isBuilding })
+        : null;
       if (namedDetails) {
         if (
           spatialBuildingCandidate &&

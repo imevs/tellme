@@ -1,4 +1,5 @@
 import { WIKIPEDIA_API_ENDPOINT } from '../constants';
+import { apiFetch, anySignal, throwIfAborted } from './http';
 
 export interface WikiDescriptionResult {
   title: string;
@@ -313,7 +314,7 @@ async function fetchSingleWikiTitle(
   });
 
   const url = `${WIKIPEDIA_API_ENDPOINT}?${params.toString()}`;
-  const res = await fetch(url, { signal });
+  const res = await apiFetch(url, { signal });
   if (!res.ok) {
     throw new Error(`Wikipedia error ${res.status}`);
   }
@@ -329,10 +330,11 @@ async function fetchSingleWikiTitle(
 export async function fetchWikiDescription(
   titleOrQuery: string,
   context?: WikiLookupContext,
+  externalSignal?: AbortSignal,
 ): Promise<WikiDescriptionResult> {
   wikiController?.abort();
   wikiController = new AbortController();
-  const signal = wikiController.signal;
+  const signal = anySignal(wikiController.signal, externalSignal) ?? wikiController.signal;
 
   const direct = await fetchSingleWikiTitle(titleOrQuery, signal);
   if (
@@ -364,6 +366,7 @@ export async function fetchWikiDescription(
 
     for (const candidate of candidates) {
       const res = await fetchSingleWikiTitle(candidate, signal).catch(() => null);
+      throwIfAborted(signal);
       if (
         res &&
         !isGenericOrWrongLocationArticle(res.title, res.description, context, res.coordinates)

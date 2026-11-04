@@ -1,4 +1,10 @@
-import { NOMINATIM_ENDPOINT, NOMINATIM_SEARCH_ENDPOINT, PHOTON_REVERSE_ENDPOINT } from '../constants';
+import {
+  NOMINATIM_ENDPOINT,
+  NOMINATIM_SEARCH_ENDPOINT,
+  PHOTON_REVERSE_ENDPOINT,
+  NOMINATIM_CONTACT_EMAIL,
+} from '../constants';
+import { apiFetch, anySignal, throwIfAborted } from './http';
 import type { OsmFeature, AddressPlaceOrganization } from '../types';
 
 let osmController: AbortController | null = null;
@@ -235,9 +241,12 @@ export async function fetchAddressInventory(
     if (city && city.trim()) {
       params.set('city', city.trim());
     }
+    if (NOMINATIM_CONTACT_EMAIL) {
+      params.set('email', NOMINATIM_CONTACT_EMAIL);
+    }
 
     const url = `${NOMINATIM_SEARCH_ENDPOINT}?${params.toString()}`;
-    const res = await fetch(url, signal ? { signal } : {});
+    const res = await apiFetch(url, signal ? { signal } : {});
     if (!res.ok) {
       return { primary: undefined, orgs: [] };
     }
@@ -368,10 +377,11 @@ export function mergeWithAddressPrimary(
 export async function fetchOsmObjectAt(
   lat: number,
   lon: number,
+  externalSignal?: AbortSignal,
 ): Promise<OsmFeature | null> {
   osmController?.abort();
   osmController = new AbortController();
-  const signal = osmController.signal;
+  const signal = anySignal(osmController.signal, externalSignal) ?? osmController.signal;
 
   // 1. Try Nominatim reverse geocode with extratags
   try {
@@ -383,11 +393,13 @@ export async function fetchOsmObjectAt(
       namedetails: '1',
       addressdetails: '1',
       zoom: '18',
-      email: 'tellme-app@explore.local',
     });
+    if (NOMINATIM_CONTACT_EMAIL) {
+      params.set('email', NOMINATIM_CONTACT_EMAIL);
+    }
     const url = `${NOMINATIM_ENDPOINT}?${params.toString()}`;
 
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       signal,
       headers: {
         'Accept': 'application/json',
@@ -407,6 +419,7 @@ export async function fetchOsmObjectAt(
             parsed.address.city,
             signal,
           ).catch(() => ({ primary: undefined, orgs: [] }));
+          throwIfAborted(signal);
 
           const finalFeature = mergeWithAddressPrimary(parsed, inv.primary);
 
@@ -439,7 +452,7 @@ export async function fetchOsmObjectAt(
   // 2. Fallback to Photon reverse geocode (OpenStreetMap mirror)
   try {
     const photonUrl = `${PHOTON_REVERSE_ENDPOINT}?lat=${lat}&lon=${lon}`;
-    const res = await fetch(photonUrl, { signal });
+    const res = await apiFetch(photonUrl, { signal });
     if (res.ok) {
       const data: unknown = await res.json();
       const parsed = parsePhotonResponse(data, lat, lon);

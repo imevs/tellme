@@ -1,10 +1,17 @@
 import {
   GOOGLE_PLACES_API_KEY,
+  GOOGLE_PLACES_PROXY_URL,
   GOOGLE_PLACES_SEARCH_URL,
   GOOGLE_PLACES_MAX_DAILY_CALLS,
 } from '../constants';
+import { apiFetch, anySignal } from './http';
 import { poiCategory, poiAddress } from './overpass';
 import type { GooglePlaceDetails, AddressPlaceOrganization, OsmFeature, POI } from '../types';
+
+/** True when Google Places can be called (via proxy or a configured browser key). */
+export function isGooglePlacesConfigured(): boolean {
+  return Boolean(GOOGLE_PLACES_PROXY_URL || GOOGLE_PLACES_API_KEY);
+}
 
 // ── In-Memory Cache ─────────────────────────────────────────
 interface CachedPlacesData {
@@ -202,9 +209,15 @@ export async function fetchGooglePlacesAtAddress(
   query: string,
   lat?: number,
   lon?: number,
+  signal?: AbortSignal,
 ): Promise<{ primary: GooglePlaceDetails | null; places: AddressPlaceOrganization[] }> {
   const cleanQuery = query.trim();
   if (!cleanQuery || cleanQuery.length < 3 || cleanQuery === 'Map Object') {
+    return { primary: null, places: [] };
+  }
+
+  // Google Places is optional: only enabled when a proxy or a (restricted) key is configured
+  if (!isGooglePlacesConfigured()) {
     return { primary: null, places: [] };
   }
 
@@ -225,6 +238,7 @@ export async function fetchGooglePlacesAtAddress(
   // 3. Perform API Call with minimal lean FieldMask
   placesController?.abort();
   placesController = new AbortController();
+  const requestSignal = anySignal(placesController.signal, signal);
 
   try {
     const bodyPayload: Record<string, unknown> = {
@@ -255,14 +269,19 @@ export async function fetchGooglePlacesAtAddress(
       'places.editorialSummary',
     ].join(',');
 
-    const res = await fetch(GOOGLE_PLACES_SEARCH_URL, {
+    // Prefer the server-side proxy (keeps the key out of the client bundle);
+    // fall back to a direct call with a referrer-restricted browser key.
+    const useProxy = Boolean(GOOGLE_PLACES_PROXY_URL);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Goog-FieldMask': fieldMask,
+    };
+    if (!useProxy) headers['X-Goog-Api-Key'] = GOOGLE_PLACES_API_KEY;
+
+    const res = await apiFetch(useProxy ? GOOGLE_PLACES_PROXY_URL : GOOGLE_PLACES_SEARCH_URL, {
       method: 'POST',
-      signal: placesController.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-        'X-Goog-FieldMask': fieldMask,
-      },
+      ...(requestSignal ? { signal: requestSignal } : {}),
+      headers,
       body: JSON.stringify(bodyPayload),
     });
 
