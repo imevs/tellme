@@ -58,7 +58,7 @@ export function parseNominatimResponse(
   const localName = rawLocalName && rawLocalName !== name ? rawLocalName : undefined;
 
   const category = String(data['category'] || (extratags['building'] ? 'building' : 'place'));
-  const type     = String(data['type'] || 'feature');
+  const type = String(data['type'] || 'feature');
   const displayName = typeof data['display_name'] === 'string' ? data['display_name'] : '';
 
   const lat = typeof data['lat'] === 'string' ? parseFloat(data['lat']) : fallbackLat;
@@ -95,13 +95,13 @@ export function parseNominatimResponse(
     type,
     displayName,
     address: {
-      road:        addrObj['road'],
+      road: addrObj['road'],
       houseNumber: addrObj['house_number'] ?? addrObj['housenumber'],
-      suburb:      addrObj['suburb'] ?? addrObj['neighbourhood'] ?? addrObj['quarter'],
-      city:        addrObj['city'] ?? addrObj['town'] ?? addrObj['village'],
-      country:     addrObj['country'],
+      suburb: addrObj['suburb'] ?? addrObj['neighbourhood'] ?? addrObj['quarter'],
+      city: addrObj['city'] ?? addrObj['town'] ?? addrObj['village'],
+      country: addrObj['country'],
       countryCode: addrObj['country_code']?.toLowerCase(),
-      postcode:    addrObj['postcode'],
+      postcode: addrObj['postcode'],
     },
     tags: extratags,
     wikidataId,
@@ -145,7 +145,7 @@ export function parsePhotonResponse(
 
   const name = String(props['name'] || props['street'] || 'Map Object');
   const category = String(props['osm_key'] || 'place');
-  const type     = String(props['osm_value'] || 'feature');
+  const type = String(props['osm_value'] || 'feature');
 
   const road = props['street'] ? String(props['street']) : undefined;
   const houseNumber = props['housenumber'] ? String(props['housenumber']) : undefined;
@@ -211,20 +211,98 @@ export function inferOsmEmoji(category: string, type: string): string {
 }
 
 // ── Address Inventory & Canonical Entity Resolution ────────
-const addressInventoryCache = new Map<string, { primary?: OsmFeature | undefined; orgs: AddressPlaceOrganization[] }>();
+export interface AddressInventory {
+  primary?: OsmFeature | undefined;
+  orgs: AddressPlaceOrganization[];
+  /** Named, non-generic features (shops, offices, museums, …) registered at this address */
+  candidates?: OsmFeature[] | undefined;
+}
+
+const addressInventoryCache = new Map<string, AddressInventory>();
+
+const GENERIC_FEATURE_NAME =
+  /^(building|house|yes|residential|apartments|commercial|retail|office|map object)$/i;
+
+export function isNamedFeature(f: OsmFeature): boolean {
+  const n = f.name?.trim();
+  return Boolean(n) && !GENERIC_FEATURE_NAME.test(n) && !/^\d+[a-z]?$/i.test(n);
+}
+
+/**
+ * Heuristic "how much do we know about this feature" score, used to pick a single
+ * canonical feature when several named features share one address.
+ */
+export function scoreOsmFeatureRichness(f: OsmFeature): number {
+  const t = f.tags;
+  let score = 0;
+  if (t['wikidata']) score += 4;
+  else if (f.wikidataId) score += 1; // brand/operator/subject only
+  if (t['wikipedia'] || t['wikipedia:en']) score += 4;
+  else if (f.wikipedia) score += 1;
+  if (t['website'] || t['contact:website']) score += 2;
+  if (t['opening_hours']) score += 1;
+  if (t['phone'] || t['contact:phone']) score += 1;
+  if (t['description']) score += 1;
+  if (f.category === 'tourism' || f.category === 'historic') score += 3;
+  if (f.localName) score += 1;
+  if (f.startDate) score += 1;
+  return score;
+}
+
+/** Deterministic ordering: richest first, then stable by OSM identity (never by tap position). */
+function compareRichness(a: OsmFeature, b: OsmFeature): number {
+  const diff = scoreOsmFeatureRichness(b) - scoreOsmFeatureRichness(a);
+  if (diff !== 0) return diff;
+  if (a.osmType !== b.osmType) return a.osmType < b.osmType ? -1 : 1;
+  return a.osmId - b.osmId;
+}
+
+/** Minimum richness a candidate needs to replace a generic (unnamed) tapped feature. */
+const MIN_SCORE_TO_REPLACE_GENERIC = 4;
+
+/**
+ * Picks the most informative named feature at an address so that every tap on the
+ * same address yields the same dossier. Returns `parsed` unchanged when nothing better exists.
+ */
+export function pickRichestFeatureAtAddress(
+  parsed: OsmFeature,
+  candidates: OsmFeature[] | undefined,
+): OsmFeature {
+  const pool: OsmFeature[] = [];
+  const seen = new Set<string>();
+  const add = (f: OsmFeature): void => {
+    const key = `${f.osmType}/${f.osmId}`;
+    if (seen.has(key) || !isNamedFeature(f)) return;
+    seen.add(key);
+    pool.push(f);
+  };
+  add(parsed);
+  for (const c of candidates ?? []) add(c);
+  if (pool.length === 0) return parsed;
+
+  pool.sort(compareRichness);
+  const best = pool[0]!;
+  if (best.osmType === parsed.osmType && best.osmId === parsed.osmId) return parsed;
+
+  // A generic tapped feature (e.g. an apartment block) is only replaced by a clearly informative one
+  if (!isNamedFeature(parsed) && scoreOsmFeatureRichness(best) < MIN_SCORE_TO_REPLACE_GENERIC) {
+    return parsed;
+  }
+  return best;
+}
 
 export async function fetchAddressInventory(
   road: string,
   houseNumber: string,
   city?: string | undefined,
   signal?: AbortSignal | undefined,
-): Promise<{ primary?: OsmFeature | undefined; orgs: AddressPlaceOrganization[] }> {
-  const normRoad = road.trim().toLowerCase();
-  const normHouse = houseNumber.trim().toLowerCase();
-  const normCity = (city || '').trim().toLowerCase();
-  const cacheKey = `${normRoad}_${normHouse}_${normCity}`;
+): Promise < AddressInventory > {
+    const normRoad = road.trim().toLowerCase();
+    const normHouse = houseNumber.trim().toLowerCase();
+    const normCity = (city || '').trim().toLowerCase();
+    const cacheKey = `${normRoad}_${normHouse}_${normCity}`;
 
-  if (addressInventoryCache.has(cacheKey)) {
+    if(addressInventoryCache.has(cacheKey)) {
     return addressInventoryCache.get(cacheKey)!;
   }
 
@@ -278,6 +356,7 @@ export async function fetchAddressInventory(
 
     // 2. Extract organizations located at this address
     const orgs: AddressPlaceOrganization[] = [];
+    const candidates: OsmFeature[] = [];
     const seenOrgNames = new Set<string>();
 
     for (const item of parsedItems) {
@@ -288,12 +367,13 @@ export async function fetchAddressInventory(
       if (normName === `${normHouse} ${normRoad}` || normName === `${normRoad} ${normHouse}`) continue;
       if (seenOrgNames.has(normName)) continue;
 
-      const isOrgCategory = /^(shop|amenity|office|craft)$/i.test(item.category) ||
+      const isOrgCategory = /^(shop|amenity|office|craft|tourism|historic|leisure)$/i.test(item.category) ||
         /^(supermarket|mall|pharmacy|atm|bank|restaurant|cafe|bakery|butcher|clothes|parcel_locker|clinic|dentist|doctors|lawyer|copyshop|optician|hairdresser|beauty|kiosk)$/i.test(item.type) ||
         Boolean(item.tags['operator']);
 
       if (isOrgCategory) {
         seenOrgNames.add(normName);
+        candidates.push(item);
         orgs.push({
           name: item.name,
           category: item.type ? item.type.replace(/_/g, ' ') : item.category,
@@ -303,7 +383,7 @@ export async function fetchAddressInventory(
       }
     }
 
-    const result = { primary, orgs };
+    const result: AddressInventory = { primary, orgs, candidates };
     addressInventoryCache.set(cacheKey, result);
     return result;
   } catch {
@@ -418,49 +498,53 @@ export async function fetchOsmObjectAt(
             parsed.address.houseNumber,
             parsed.address.city,
             signal,
-          ).catch(() => ({ primary: undefined, orgs: [] }));
+          ).catch ((): AddressInventory => ({ primary: undefined, orgs: [] }));
           throwIfAborted(signal);
 
-          const finalFeature = mergeWithAddressPrimary(parsed, inv.primary);
+          // Every tap on the same address must yield the same dossier: choose the most
+          // informative named feature there, regardless of which one was tapped.
+          const chosen = pickRichestFeatureAtAddress(parsed, inv.candidates);
+          const finalFeature = mergeWithAddressPrimary(chosen, inv.primary);
 
-          const allOrgs = [...inv.orgs];
-          if (parsed.name && parsed.name !== finalFeature.name) {
-            const isSubOrg = /^(shop|amenity|office|craft)$/i.test(parsed.category) ||
-              /^(supermarket|pharmacy|atm|bank|restaurant|cafe|bakery|butcher|clothes|parcel_locker)$/i.test(parsed.type);
-            if (isSubOrg && !allOrgs.some(o => o.name.toLowerCase() === parsed.name.toLowerCase())) {
-              allOrgs.unshift({
-                name: parsed.name,
-                category: parsed.type ? parsed.type.replace(/_/g, ' ') : parsed.category,
-                formattedAddress: formatOsmAddress(parsed),
-                source: 'osm',
-              });
+            const chosenName = finalFeature.name.trim().toLowerCase();
+            const allOrgs = inv.orgs.filter(o => o.name.trim().toLowerCase() !== chosenName);
+            if (parsed.name && parsed.name.trim().toLowerCase() !== chosenName) {
+              const isSubOrg = /^(shop|amenity|office|craft)$/i.test(parsed.category) ||
+                /^(supermarket|pharmacy|atm|bank|restaurant|cafe|bakery|butcher|clothes|parcel_locker)$/i.test(parsed.type);
+              if (isSubOrg && !allOrgs.some(o => o.name.toLowerCase() === parsed.name.toLowerCase())) {
+                allOrgs.unshift({
+                  name: parsed.name,
+                  category: parsed.type ? parsed.type.replace(/_/g, ' ') : parsed.category,
+                  formattedAddress: formatOsmAddress(parsed),
+                  source: 'osm',
+                });
+              }
             }
+
+            finalFeature.addressOrganizations = allOrgs;
+            return finalFeature;
           }
 
-          finalFeature.addressOrganizations = allOrgs;
-          return finalFeature;
+          return parsed;
         }
-
-        return parsed;
       }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err;
+      // Fall through to Komoot Photon
     }
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') throw err;
-    // Fall through to Komoot Photon
-  }
 
-  // 2. Fallback to Photon reverse geocode (OpenStreetMap mirror)
-  try {
-    const photonUrl = `${PHOTON_REVERSE_ENDPOINT}?lat=${lat}&lon=${lon}`;
-    const res = await apiFetch(photonUrl, { signal });
-    if (res.ok) {
-      const data: unknown = await res.json();
-      const parsed = parsePhotonResponse(data, lat, lon);
-      if (parsed) return parsed;
+    // 2. Fallback to Photon reverse geocode (OpenStreetMap mirror)
+    try {
+      const photonUrl = `${PHOTON_REVERSE_ENDPOINT}?lat=${lat}&lon=${lon}`;
+      const res = await apiFetch(photonUrl, { signal });
+      if (res.ok) {
+        const data: unknown = await res.json();
+        const parsed = parsePhotonResponse(data, lat, lon);
+        if (parsed) return parsed;
+      }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err;
     }
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') throw err;
-  }
 
-  return null;
-}
+    return null;
+  }

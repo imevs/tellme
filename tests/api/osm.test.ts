@@ -5,6 +5,8 @@ import {
   formatOsmAddress,
   inferOsmEmoji,
   mergeWithAddressPrimary,
+  pickRichestFeatureAtAddress,
+  scoreOsmFeatureRichness,
 } from '../../src/api/osm';
 
 describe('OpenStreetMap API parser (src/api/osm.ts)', () => {
@@ -246,6 +248,62 @@ describe('OpenStreetMap API parser (src/api/osm.ts)', () => {
       expect(merged.name).toBe('Riga Cathedral');
       expect(merged.wikidataId).toBe('Q1146288');
       expect(merged.startDate).toBe('1211');
+    });
+  });
+
+  describe('pickRichestFeatureAtAddress', () => {
+    const addr = { road: 'Krišjāņa Barona iela', houseNumber: '4', city: 'Rīga', countryCode: 'lv' };
+    const drogas = parseNominatimResponse({
+      osm_type: 'node', osm_id: 452920037, lat: '56.9495857', lon: '24.1182805',
+      category: 'shop', type: 'chemist', name: 'Drogas',
+      address: { house_number: '4', road: 'Krišjāņa Barona iela', city: 'Rīga', country_code: 'lv' },
+      extratags: { opening_hours: 'Mo-Sa 09:00-21:00', 'brand:wikidata': 'Q15806753', 'brand:wikipedia': 'de:Drogas' },
+      namedetails: { name: 'Drogas' },
+    }, 0, 0)!;
+    const museum = parseNominatimResponse({
+      osm_type: 'node', osm_id: 470042272, lat: '56.9494863', lon: '24.1181106',
+      category: 'tourism', type: 'museum', name: 'Latvijas Nacionālais dabas muzejs',
+      address: { house_number: '4', road: 'Krišjāņa Barona iela', city: 'Rīga', country_code: 'lv' },
+      extratags: {
+        website: 'https://www.dabasmuzejs.gov.lv/', wikidata: 'Q6497382',
+        wikipedia: 'lv:Latvijas Nacionālais dabas muzejs', opening_hours: 'We-Su 10:00-17:00', phone: '+371 67 356 023',
+      },
+      namedetails: { name: 'Latvijas Nacionālais dabas muzejs', 'name:en': 'Latvian National Museum of Natural History' },
+    }, 0, 0)!;
+    const atm = parseNominatimResponse({
+      osm_type: 'node', osm_id: 445460310, category: 'amenity', type: 'atm', name: 'SEB',
+      address: { house_number: '4', road: 'Krišjāņa Barona iela', city: 'Rīga', country_code: 'lv' },
+      extratags: { operator: 'SEB', 'operator:wikidata': 'Q975655', opening_hours: '24/7' },
+      namedetails: { name: 'SEB' },
+    }, 0, 0)!;
+
+    it('scores a museum with wikidata, website and hours above a brand-only shop', () => {
+      expect(scoreOsmFeatureRichness(museum)).toBeGreaterThan(scoreOsmFeatureRichness(drogas));
+    });
+
+    it('yields the same feature regardless of which co-located feature was tapped', () => {
+      const candidates = [drogas, museum, atm];
+      for (const tapped of candidates) {
+        expect(pickRichestFeatureAtAddress(tapped, candidates).osmId).toBe(museum.osmId);
+      }
+      expect(addr.houseNumber).toBe('4');
+    });
+
+    it('keeps the tapped feature when it is already the richest', () => {
+      expect(pickRichestFeatureAtAddress(museum, [drogas])).toBe(museum);
+    });
+
+    it('does not replace a generic building with a barely-informative shop', () => {
+      const building = { ...drogas, osmId: 1, osmType: 'relation' as const, name: 'Map Object', category: 'building', type: 'apartments', tags: {}, wikidataId: undefined, wikipedia: undefined };
+      expect(pickRichestFeatureAtAddress(building, [atm])).toBe(building);
+      expect(pickRichestFeatureAtAddress(building, [atm, museum]).osmId).toBe(museum.osmId);
+    });
+
+    it('is deterministic on equal scores (stable by OSM id, not tap order)', () => {
+      const a = { ...atm, osmId: 10 };
+      const b = { ...atm, osmId: 5, name: 'Other' };
+      expect(pickRichestFeatureAtAddress(a, [b]).osmId).toBe(5);
+      expect(pickRichestFeatureAtAddress(b, [a]).osmId).toBe(5);
     });
   });
 });
